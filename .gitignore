@@ -41,3 +41,4 @@
 *.pdb
 *.ipdb
 .vs
+*.exp

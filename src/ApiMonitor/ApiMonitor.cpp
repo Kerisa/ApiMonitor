@@ -47,6 +47,7 @@ void LoadVReloc(ULONG_PTR hBase, bool bForce, ULONG_PTR delta)
 PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
 {
     HMODULE hDll2 = LoadLibraryEx(dllPath, NULL, 0);
+    ULONG_PTR entry = (ULONG_PTR)GetProcAddress(hDll2, "Entry");
     HANDLE hDll = CreateFile(dllPath, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hDll == INVALID_HANDLE_VALUE)
         return NULL;    
@@ -75,7 +76,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         LoadVReloc((ULONG_PTR)memData.data(), TRUE, delta);
     SIZE_T W = 0;
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
-    return (PVOID)((ULONG_PTR)0x1140 + (ULONG_PTR)newBase);
+    return (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
     //return (PVOID)((ULONG_PTR)((PIMAGE_NT_HEADERS)(imageData + ((PIMAGE_DOS_HEADER)imageData)->e_lfanew))->OptionalHeader.AddressOfEntryPoint + (ULONG_PTR)newBase);
     //return (PVOID)((ULONG_PTR)executeProc - (ULONG_PTR)imageData + (ULONG_PTR)newBase);
 }
@@ -91,10 +92,9 @@ int main(int argc, char** argv)
     PROCESS_INFORMATION pi = { 0 };
     BOOL success = CreateProcess(app, cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
 
-    //HANDLE hRemote = OpenProcess(PROCESS_ALL_ACCESS, FALSE, atoi(argv[1]));
+    LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
-    LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
     PARAM param;
     param.ntdllBase = (LPVOID)GetModuleHandleA("ntdll.dll");
     param.dwProcessId = pi.dwProcessId;
