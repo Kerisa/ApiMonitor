@@ -48,6 +48,21 @@ typedef HANDLE(WINAPI * FN_CreateThread)(
     DWORD dwCreationFlags,
     LPDWORD lpThreadId);
 
+typedef VOID (WINAPI * FN_OutputDebugStringA)(
+    LPCSTR lpOutputString);
+
+typedef LPVOID (WINAPI * FN_VirtualAlloc)(
+    LPVOID lpAddress,
+    SIZE_T dwSize,
+    DWORD flAllocationType,
+    DWORD flProtect);
+
+typedef BOOL (WINAPI * FN_VirtualProtect)(
+    LPVOID lpAddress,
+    SIZE_T dwSize,
+    DWORD flNewProtect,
+    PDWORD lpflOldProtect);
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
@@ -58,11 +73,18 @@ struct PARAM
     DWORD dwThreadId;
     CONTEXT ctx;
 
-    FN_GetProcAddress   f_GetProcAddress;
-    FN_OpenThread       f_OpenThread;
-    FN_SuspendThread    f_SuspendThread;
-    FN_SetThreadContext f_SetThreadContext;
-    FN_ResumeThread     f_ResumeThread;
-    FN_CloseHandle      f_CloseHandle;
-    FN_CreateThread     f_CreateThread;
+    // ntdll
+    FN_LdrLoadDll           f_LdrLoadDll;
+
+    // kernelbase
+    FN_GetProcAddress       f_GetProcAddress;
+    FN_OpenThread           f_OpenThread;
+    FN_SuspendThread        f_SuspendThread;
+    FN_SetThreadContext     f_SetThreadContext;
+    FN_ResumeThread         f_ResumeThread;
+    FN_CloseHandle          f_CloseHandle;
+    FN_CreateThread         f_CreateThread;
+    FN_OutputDebugStringA   f_OutputDebugStringA;
+    FN_VirtualAlloc         f_VirtualAlloc;
+    FN_VirtualProtect       f_VirtualProtect;
 };
