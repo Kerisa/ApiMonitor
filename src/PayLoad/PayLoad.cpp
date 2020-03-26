@@ -194,6 +194,16 @@ public:
         Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
             << ", func name: " << (msEntries.GetEntry(self_index) ? msEntries.GetEntry(self_index)->mFuncName : "<idx error>"));
     }
+    static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        NTSTATUS s = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
+        wchar_t wbuf[128] = { 0 };
+        wcsncpy_s(wbuf, _countof(wbuf), ModuleFileName->Buffer, min(ModuleFileName->Length, _countof(wbuf) - 1));
+        wbuf[min(ModuleFileName->Length, _countof(wbuf) - 1)] = L'\0';
+        Vlog("[HookEntries::LdrLoadDllHookFunction] Name: " << wbuf << ", Handle: " << ModuleHandle);
+        return s;
+    }
 
     void Init(FN_VirtualAlloc alloctor, size_t count)
     {
@@ -240,26 +250,66 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
     HookEntries::msEntries.Init(param->f_VirtualAlloc, 4096);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
     strcpy_s(e->mFuncName, sizeof(e->mFuncName), funcName);
-    //
-    // push entry_index
-    // push continue_offset
-    // push hook_func
-    // ret
-    // push original_func   <--- here continue_offset
-    // ret
-    //
 
-    e->mBytesCode[0] = '\x68';
-    *(ULONG_PTR*)&e->mBytesCode[1] = (ULONG_PTR)e->mSelfIndex;
-    e->mBytesCode[5] = '\x68';
-    *(ULONG_PTR*)&e->mBytesCode[6] = (ULONG_PTR)&e->mBytesCode[16];
-    e->mBytesCode[10] = '\x68';
-    *(ULONG_PTR*)&e->mBytesCode[11] = (ULONG_PTR)e->mHookFunction;
-    e->mBytesCode[15] = '\xc3';
-    e->mBytesCode[16] = '\x68';
-    *(ULONG_PTR*)&e->mBytesCode[17] = (ULONG_PTR)oldEntry;
-    e->mBytesCode[21] = '\xc3';
-    e->mBytesCode[22] = '\xcc';
+    if (strcmp(funcName, "LdrLoadDll"))
+    {
+        //
+        // push entry_index
+        // push continue_offset
+        // push hook_func
+        // ret
+        // push original_func    ; <--- here continue_offset
+        // ret
+        //
+
+        e->mBytesCode[0] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[1] = (ULONG_PTR)e->mSelfIndex;
+        e->mBytesCode[5] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[6] = (ULONG_PTR)&e->mBytesCode[16];
+        e->mBytesCode[10] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[11] = (ULONG_PTR)e->mHookFunction;
+        e->mBytesCode[15] = '\xc3';
+        e->mBytesCode[16] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[17] = (ULONG_PTR)oldEntry;
+        e->mBytesCode[21] = '\xc3';
+        e->mBytesCode[22] = '\xcc';
+    }
+    else
+    {
+        // for LdrLoadDll
+        
+        //
+        // push continue_offset
+        // push original_func
+        // ret
+        // sub esp, c                   ; <--- here continue_offset
+        // mov dword ptr [esp-4], eax   ; save eax
+        // mov eax, dword ptr [esp]     ; save UNICODE_STRING of module name
+        // mov dword ptr [esp-8], eax
+        // mov eax, dword ptr [esp+c]   ; original return addr
+        // mov dword ptr [esp], eax
+        // mov eax, dword ptr [esp+8]   ; ouput module addr
+        // mov eax, dword ptr [eax]
+        // mov dword ptr [esp+c], eax
+        // mov eax, dword ptr [esp-8]   ; module name
+        // add eax, 4
+        // mov eax, dword ptr [eax]
+        // mov dword ptr [esp+8], eax
+        // mov dword ptr[esp+4], entry_index
+        // mov eax, dword ptr [esp-4]   ; restore eax
+        // push hook_func          
+        // ret
+        //
+
+        //
+        // push <LdrLoadDllHookFunction>
+        // ret
+        //
+        Vlog("[AddHookRoutine] handle for LdrLoadDll");
+        e->mBytesCode[0] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[1] = (ULONG_PTR)HookEntries::LdrLoadDllHookFunction;
+        e->mBytesCode[5] = '\xcc';
+    }
 
     ULONG_PTR newRva = (ULONG_PTR)e->mBytesCode - (ULONG_PTR)hmod;
     Vlog("[AddHookRoutine] finish, new rva: " << (PVOID)newRva);
@@ -346,6 +396,7 @@ void Entry2()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     param->f_LdrLoadDll = (FN_LdrLoadDll)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrLoadDll");
+    param->f_LdrInitializeThunk = (FN_LdrInitializeThunk)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrInitializeThunk");
     wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
     UNICODE_STRING name = { 0 };
     name.Length = wcslen(buffer) * sizeof(wchar_t);
@@ -391,6 +442,7 @@ DWORD WINAPI Recover(LPVOID pv)
 
     HANDLE hT = param->f_OpenThread(THREAD_ALL_ACCESS, FALSE, param->dwThreadId);
     param->f_SuspendThread(hT);
+    //param->ctx.Eip = (ULONG_PTR)param->f_LdrInitializeThunk + 2;
     param->f_SetThreadContext(hT, &param->ctx);
     param->f_ResumeThread(hT);
     param->f_CloseHandle(hT);

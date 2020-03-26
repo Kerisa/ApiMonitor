@@ -1,5 +1,11 @@
 
 
+typedef VOID (NTAPI * FN_LdrInitializeThunk)(
+    ULONG Unknown1,
+    ULONG Unknown2,
+    ULONG Unknown3,
+    ULONG Unknown4);
+
 typedef struct _UNICODE_STRING {
     USHORT Length;
     USHORT MaximumLength;
@@ -7,8 +13,8 @@ typedef struct _UNICODE_STRING {
 } UNICODE_STRING, *PUNICODE_STRING;
 
 typedef NTSTATUS(NTAPI * FN_LdrLoadDll)(
-    PWCHAR               PathToFile OPTIONAL,
-    ULONG                Flags OPTIONAL,
+    PWCHAR               PathToFile,
+    ULONG                Flags,
     PUNICODE_STRING      ModuleFileName,
     PHANDLE              ModuleHandle);
 
@@ -73,7 +79,10 @@ struct PARAM
     DWORD dwThreadId;
     CONTEXT ctx;
 
+    char LdrInitializeThunkOEP[16];
+
     // ntdll
+    FN_LdrInitializeThunk   f_LdrInitializeThunk;
     FN_LdrLoadDll           f_LdrLoadDll;
 
     // kernelbase
