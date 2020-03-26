@@ -76,7 +76,7 @@ public:
     MLog& operator<<(void* p)
     {
         char buf[32];
-        sprintf_s(buf, sizeof(buf), "%p", p);
+        sprintf_s(buf, sizeof(buf), "0x%p", p);
         strcat_s(mBuf, sizeof(mBuf), buf);
         return *this;
     }
@@ -97,7 +97,7 @@ char MLog::mBuf[1024];
     param->f_OutputDebugStringA(ml.str()); \
   } while (0)
 
-void CollectModuleInfo(HMODULE hmod, const wchar_t* modname, const wchar_t* modpath)
+void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
 {
     Vlog("[CollectModuleInfo] enter.");
     const char* lpImage = (const char*)hmod;
@@ -176,7 +176,7 @@ public:
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
         uint32_t        mSelfIndex;
         char            mBytesCode[32];
-        char            mFuncName[64];
+        char            mFuncName[256];
         char            mParams[128];
         FN_HookFunction mHookFunction;
 
@@ -247,7 +247,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    HookEntries::msEntries.Init(param->f_VirtualAlloc, 4096);
+    HookEntries::msEntries.Init(param->f_VirtualAlloc, 32768);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
     strcpy_s(e->mFuncName, sizeof(e->mFuncName), funcName);
 
@@ -320,7 +320,7 @@ void HookModuleExportTable(HMODULE hmod)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
 
-    Vlog("[HookModuleExportTable] enter, hmod: " << (ULONG_PTR)hmod);
+    Vlog("[HookModuleExportTable] enter, hmod: " << (LPVOID)hmod);
     const char* lpImage = (const char*)hmod;
     PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
     PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
@@ -351,7 +351,7 @@ void HookModuleExportTable(HMODULE hmod)
     DWORD oldProtect = 0;
     param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), PAGE_READWRITE, &oldProtect);
 
-    Vlog("[HookModuleExportTable] replace exdisting export table");
+    Vlog("[HookModuleExportTable] replace exdisting export table, count: " << imED->NumberOfFunctions);
     PDWORD lpNames    = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
     PWORD  lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
     for (int i = 0; i < imED->NumberOfFunctions; ++i)
@@ -363,7 +363,7 @@ void HookModuleExportTable(HMODULE hmod)
         }
 
         // 查找名称
-        const char* funcName = '\0';
+        const char* funcName = "";
         for (int k = 0; k < imED->NumberOfNames; ++k)
         {
             if (lpOrdinals[k] == i)
@@ -392,6 +392,36 @@ void HookLdrLoadDll()
 
 }
 
+void HookLoadedModules()
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+    tagMODULEENTRY32 me32;
+    HANDLE hModuleSnap = param->f_CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, param->dwProcessId);
+    if (hModuleSnap == INVALID_HANDLE_VALUE)
+    {
+        Vlog("[HookLoadedModules] CreateToolhelp32Snapshot failed.");
+        return;
+    }
+
+    me32.dwSize = sizeof(tagMODULEENTRY32);
+    if (!param->f_Module32First(hModuleSnap, &me32))
+    {
+        Vlog("[HookLoadedModules] Module32First failed.");
+        return;
+    }
+
+    do
+    {
+        Vlog("[HookLoadedModules] process: " << me32.szModule << ", image base: " << (LPVOID)me32.modBaseAddr << ", path: " << me32.szExePath);
+        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath);
+        HookModuleExportTable((HMODULE)me32.modBaseAddr);
+
+    } while (param->f_Module32Next(hModuleSnap, &me32));
+
+    param->f_CloseHandle(hModuleSnap);
+}
+
 void Entry2()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -408,6 +438,7 @@ void Entry2()
     param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)hKernel, "GetProcAddress");
 
     // get more api
+    param->f_GetModuleHandleA = (FN_GetModuleHandleA)param->f_GetProcAddress((HMODULE)param->kernelBase, "GetModuleHandleA");
     param->f_OpenThread = (FN_OpenThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "OpenThread");
     param->f_SuspendThread = (FN_SuspendThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "SuspendThread");
     param->f_SetThreadContext = (FN_SetThreadContext)param->f_GetProcAddress((HMODULE)param->kernelBase, "SetThreadContext");
@@ -417,6 +448,11 @@ void Entry2()
     param->f_OutputDebugStringA = (FN_OutputDebugStringA)param->f_GetProcAddress((HMODULE)param->kernelBase, "OutputDebugStringA");
     param->f_VirtualAlloc = (FN_VirtualAlloc)param->f_GetProcAddress((HMODULE)param->kernelBase, "VirtualAlloc");
     param->f_VirtualProtect = (FN_VirtualProtect)param->f_GetProcAddress((HMODULE)param->kernelBase, "VirtualProtect");
+
+    param->kernel32 = (LPVOID)param->f_GetModuleHandleA("kernel32.dll");
+    param->f_CreateToolhelp32Snapshot = (FN_CreateToolhelp32Snapshot)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateToolhelp32Snapshot");
+    param->f_Module32First = (FN_Module32First)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32First");
+    param->f_Module32Next = (FN_Module32Next)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32Next");
 
     {
         // debug message
@@ -430,8 +466,7 @@ void Entry2()
         pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
     }
 
-    CollectModuleInfo((HMODULE)param->ntdllBase, L"ntdll.dll", L"path of ntdll.dll");
-    HookModuleExportTable((HMODULE)param->ntdllBase);
+    HookLoadedModules();
 }
 
 DWORD WINAPI Recover(LPVOID pv)

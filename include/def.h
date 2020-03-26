@@ -1,4 +1,5 @@
 
+#include <tlhelp32.h>
 
 typedef VOID (NTAPI * FN_LdrInitializeThunk)(
     ULONG Unknown1,
@@ -27,6 +28,9 @@ typedef int (WINAPI * FN_MessageBoxA)(
     LPCSTR lpText,
     LPCSTR lpCaption,
     UINT    uType);
+
+typedef HMODULE (WINAPI * FN_GetModuleHandleA)(
+    LPCSTR lpModuleName);
 
 typedef HANDLE(WINAPI * FN_OpenThread)(
     DWORD dwDesiredAccess,
@@ -69,12 +73,25 @@ typedef BOOL (WINAPI * FN_VirtualProtect)(
     DWORD flNewProtect,
     PDWORD lpflOldProtect);
 
+typedef HANDLE (WINAPI * FN_CreateToolhelp32Snapshot)(
+    DWORD dwFlags,
+    DWORD th32ProcessID);
+
+typedef BOOL (WINAPI * FN_Module32First)(
+    HANDLE hSnapshot,
+    tagMODULEENTRY32* lpme);
+
+typedef BOOL(WINAPI * FN_Module32Next)(
+    HANDLE hSnapshot,
+    tagMODULEENTRY32* lpme);
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
     static const DWORD PARAM_SIZE = 4096;
     LPVOID ntdllBase;
     LPVOID kernelBase;
+    LPVOID kernel32;
     DWORD dwProcessId;
     DWORD dwThreadId;
     CONTEXT ctx;
@@ -82,18 +99,24 @@ struct PARAM
     char LdrInitializeThunkOEP[16];
 
     // ntdll
-    FN_LdrInitializeThunk   f_LdrInitializeThunk;
-    FN_LdrLoadDll           f_LdrLoadDll;
+    FN_LdrInitializeThunk       f_LdrInitializeThunk;
+    FN_LdrLoadDll               f_LdrLoadDll;
 
     // kernelbase
-    FN_GetProcAddress       f_GetProcAddress;
-    FN_OpenThread           f_OpenThread;
-    FN_SuspendThread        f_SuspendThread;
-    FN_SetThreadContext     f_SetThreadContext;
-    FN_ResumeThread         f_ResumeThread;
-    FN_CloseHandle          f_CloseHandle;
-    FN_CreateThread         f_CreateThread;
-    FN_OutputDebugStringA   f_OutputDebugStringA;
-    FN_VirtualAlloc         f_VirtualAlloc;
-    FN_VirtualProtect       f_VirtualProtect;
+    FN_GetModuleHandleA         f_GetModuleHandleA;
+    FN_GetProcAddress           f_GetProcAddress;
+    FN_OpenThread               f_OpenThread;
+    FN_SuspendThread            f_SuspendThread;
+    FN_SetThreadContext         f_SetThreadContext;
+    FN_ResumeThread             f_ResumeThread;
+    FN_CloseHandle              f_CloseHandle;
+    FN_CreateThread             f_CreateThread;
+    FN_OutputDebugStringA       f_OutputDebugStringA;
+    FN_VirtualAlloc             f_VirtualAlloc;
+    FN_VirtualProtect           f_VirtualProtect;
+
+    // kernel32
+    FN_CreateToolhelp32Snapshot f_CreateToolhelp32Snapshot;
+    FN_Module32First            f_Module32First;
+    FN_Module32Next             f_Module32Next;
 };
