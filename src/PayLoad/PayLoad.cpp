@@ -49,7 +49,10 @@ public:
     MLog() { mBuf[0] = '\0'; }
     MLog& operator<<(const char* s)
     {
-        strcat_s(mBuf, sizeof(mBuf), s);
+        if (s)
+            strcat_s(mBuf, sizeof(mBuf), s);
+        else
+            strcat_s(mBuf, sizeof(mBuf), "(null passed)");
         return *this;
     }
     MLog& operator<<(int i)
@@ -176,23 +179,39 @@ public:
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
         uint32_t        mSelfIndex;
         char            mBytesCode[32];
-        char            mFuncName[256];
+        char*           mFuncName;
         char            mParams[128];
         FN_HookFunction mHookFunction;
+
+        void SetFuncName(const char* name)
+        {
+            if (!name)
+                return;
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            if (mFuncName)
+                param->f_HeapFree(param->f_GetProcessHeap(), 0, mFuncName);
+            size_t len = strlen(name);
+            mFuncName = (char*)param->f_HeapAlloc(param->f_GetProcessHeap(), 0, len + 1);
+            strcpy_s(mFuncName, len + 1, name);
+        }
 
         void Reset(uint32_t index)
         {
             mHookFunction = CommonHookFunction;
             mSelfIndex = index;
+            mFuncName = 0;
             memset(mBytesCode, 0, sizeof(mBytesCode));
-            memset(mFuncName,  0, sizeof(mFuncName));
             memset(mParams,    0, sizeof(mParams));
         }
     };
     static void __stdcall CommonHookFunction(uint32_t self_index)
     {
+        Entry* e = msEntries.GetEntry(self_index);
         Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
-            << ", func name: " << (msEntries.GetEntry(self_index) ? msEntries.GetEntry(self_index)->mFuncName : "<idx error>"));
+            << ", func name: " << (e ? e->mFuncName : "<idx error>")
+            << ", invoke time: " << (e ? *(int*)e->mParams : -1));
+        if (e)
+            ++(*(int*)e->mParams);
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
     {
@@ -249,7 +268,12 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     HookEntries::msEntries.Init(param->f_VirtualAlloc, 32768);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
-    strcpy_s(e->mFuncName, sizeof(e->mFuncName), funcName);
+    if (!e)
+    {
+        Vlog("[AddHookRoutine] add new entry failed, skip");
+        return 0;
+    }
+    e->SetFuncName(funcName);
 
     if (strcmp(funcName, "LdrLoadDll"))
     {
@@ -352,6 +376,7 @@ void HookModuleExportTable(HMODULE hmod)
     param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), PAGE_READWRITE, &oldProtect);
 
     Vlog("[HookModuleExportTable] replace exdisting export table, count: " << imED->NumberOfFunctions);
+    char tmpFuncNameBuffer[32] = { 0 };
     PDWORD lpNames    = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
     PWORD  lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
     for (int i = 0; i < imED->NumberOfFunctions; ++i)
@@ -372,8 +397,16 @@ void HookModuleExportTable(HMODULE hmod)
                 break;
             }
         }
+        if (funcName[0] == '\0')
+        {
+            sprintf_s(tmpFuncNameBuffer, sizeof(tmpFuncNameBuffer), "Number Export:%d", i + imED->Base);
+            funcName = tmpFuncNameBuffer;
+        }
         ULONG_PTR newRva = AddHookRoutine(hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
-        newFunc[i] = newRva;
+        if (newRva)
+            newFunc[i] = newRva;
+        else
+            newFunc[i] = oldFunc[i];
     }
 
     DWORD oldProtect2 = 0;
@@ -453,6 +486,9 @@ void Entry2()
     param->f_CreateToolhelp32Snapshot = (FN_CreateToolhelp32Snapshot)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateToolhelp32Snapshot");
     param->f_Module32First = (FN_Module32First)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32First");
     param->f_Module32Next = (FN_Module32Next)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32Next");
+    param->f_HeapAlloc = (FN_HeapAlloc)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapAlloc");    
+    param->f_HeapFree = (FN_HeapFree)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapFree");
+    param->f_GetProcessHeap = (FN_GetProcessHeap)param->f_GetProcAddress((HMODULE)param->kernel32, "GetProcessHeap");
 
     {
         // debug message

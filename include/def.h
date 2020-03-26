@@ -85,6 +85,18 @@ typedef BOOL(WINAPI * FN_Module32Next)(
     HANDLE hSnapshot,
     tagMODULEENTRY32* lpme);
 
+typedef LPVOID (WINAPI * FN_HeapAlloc)(
+    HANDLE hHeap,
+    DWORD dwFlags,
+    SIZE_T dwBytes);
+
+typedef HANDLE(WINAPI * FN_GetProcessHeap)();
+
+typedef BOOL (WINAPI * FN_HeapFree)(
+    HANDLE hHeap,
+    DWORD dwFlags,
+    LPVOID lpMem);
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
@@ -119,4 +131,7 @@ struct PARAM
     FN_CreateToolhelp32Snapshot f_CreateToolhelp32Snapshot;
     FN_Module32First            f_Module32First;
     FN_Module32Next             f_Module32Next;
+    FN_HeapAlloc                f_HeapAlloc;
+    FN_HeapFree                 f_HeapFree;
+    FN_GetProcessHeap           f_GetProcessHeap;
 };
