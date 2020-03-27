@@ -112,7 +112,8 @@ struct PARAM
     DWORD dwProcessId;
     DWORD dwThreadId;
     CONTEXT ctx;
-    HANDLE heapHandle;
+    HANDLE NormalHeapHandle;
+    HANDLE ExecuteHeapHandle;
 
     // ntdll
     FN_LdrInitializeThunk       f_LdrInitializeThunk;

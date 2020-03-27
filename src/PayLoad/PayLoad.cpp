@@ -7,11 +7,35 @@
 
 namespace stl_alloc
 {
+    void* MallocExe(size_t s)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        return param->f_HeapAlloc(param->ExecuteHeapHandle, 0, s);
+    }
+
+    void FreeExe(void* ptr)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_HeapFree(param->ExecuteHeapHandle, 0, ptr);
+    }
+
+    void* Malloc(size_t s)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        return param->f_HeapAlloc(param->NormalHeapHandle, 0, s);
+    }
+
+    void Free(void* ptr)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_HeapFree(param->NormalHeapHandle, 0, ptr);
+    }
+
+
     // allocate的实际实现，简单封装new，当无法获得内存时，报错并退出
     template <class T>
     inline T* _allocate(ptrdiff_t size, T*) {
-        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-        T* tmp = (T*)param->f_HeapAlloc(param->heapHandle, 0, (size_t)(size * sizeof(T)));
+        T* tmp = (T*)Malloc((size_t)(size * sizeof(T)));
         if (!tmp)
         {
             // OOM
@@ -24,8 +48,7 @@ namespace stl_alloc
     template <class T>
     inline void _deallocate(T* buffer)
     {
-        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-        param->f_HeapFree(param->heapHandle, 0, buffer);
+        Free(buffer);
     }
 
     // construct的实际实现，直接调用对象的构造函数
@@ -255,19 +278,23 @@ public:
     static HookEntries msEntries;
     struct Entry
     {
+        static constexpr size_t ByteCodeLength = 32;
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
         uint32_t                mSelfIndex;
-        std::array<char, 32>    mBytesCode;
+        char*                   mBytesCode;
         string                  mFuncName;
         std::array<char, 128>   mParams;
         FN_HookFunction         mHookFunction;
+
+        Entry() { mBytesCode = (char*)stl_alloc::MallocExe(ByteCodeLength); }
 
         void Reset(uint32_t index)
         {
             mHookFunction = CommonHookFunction;
             mSelfIndex = index;
-            memset(mBytesCode.data(), 0, sizeof(mBytesCode));
-            memset(mParams.data(),    0, sizeof(mParams));
+            memset(mBytesCode, 0, ByteCodeLength);
+            memset(mParams.data(), 0, mParams.size());
+            mFuncName.clear();
         }
     };
     static void __stdcall CommonHookFunction(uint32_t self_index)
@@ -290,40 +317,23 @@ public:
         return s;
     }
 
-    void Init(FN_VirtualAlloc alloctor, size_t count)
-    {
-        if (!mEntryArray)
-        {
-            mEntryCounts = count;
-            mEntryUsed = 0;
-            mEntryArray = (Entry*)alloctor(0, sizeof(Entry) * count, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-            Vlog("[HookEntries::AddEntry] init, total: " << mEntryCounts << ", addr: " << (ULONG_PTR)mEntryArray);
-        }
-    }
-
     Entry* AddEntry()
     {
-        if (mEntryUsed >= mEntryCounts)
-        {
-            Vlog("[HookEntries::AddEntry] full, total: " << mEntryCounts);
-            return nullptr;
-        }
-        Entry* ret = &mEntryArray[mEntryUsed];
-        ret->Reset(mEntryUsed);
-        ++mEntryUsed;
-        Vlog("[HookEntries::AddEntry] entry: " << ret << ", used count: " << mEntryUsed);
+        Entry* ret = (Entry*)stl_alloc::Malloc(sizeof(Entry));
+        ret->Entry::Entry();
+        ret->Reset(mEntryArray.size());
+        mEntryArray.push_back(ret);
+        Vlog("[HookEntries::AddEntry] entry: " << ret << ", added count: " << mEntryArray.size());
         return ret;
     }
 
     Entry* GetEntry(uint32_t i)
     {
-        return i < mEntryUsed ? &mEntryArray[i] : nullptr;
+        return i < mEntryArray.size() ? mEntryArray[i] : nullptr;
     }
 
 private:
-    uint32_t mEntryCounts{ 0 };
-    uint32_t mEntryUsed{ 0 };
-    Entry*   mEntryArray{ nullptr };
+    std::vector<Entry*, stl_alloc::allocator<Entry*>> mEntryArray;
 };
 HookEntries HookEntries::msEntries;
 
@@ -331,8 +341,6 @@ HookEntries HookEntries::msEntries;
 ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
-    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    HookEntries::msEntries.Init(param->f_VirtualAlloc, 32768);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
     if (!e)
     {
@@ -386,7 +394,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
         e->mBytesCode[5] = '\xcc';
     }
 
-    ULONG_PTR newRva = (ULONG_PTR)e->mBytesCode.data() - (ULONG_PTR)hmod;
+    ULONG_PTR newRva = (ULONG_PTR)e->mBytesCode - (ULONG_PTR)hmod;
     Vlog("[AddHookRoutine] finish, new rva: " << (PVOID)newRva);
     return newRva;
 }
@@ -538,7 +546,8 @@ void Entry2()
     param->f_GetProcessHeap = (FN_GetProcessHeap)param->f_GetProcAddress((HMODULE)param->kernel32, "GetProcessHeap");
 
     // CeateHeap
-    param->heapHandle = param->f_HeapCreate(0, 1024 * 1024 * 10, 0);
+    param->NormalHeapHandle  = param->f_HeapCreate(0, 1024 * 1024 * 10, 0);
+    param->ExecuteHeapHandle = param->f_HeapCreate(HEAP_CREATE_ENABLE_EXECUTE, 1024 * 1024 * 1, 0);
 
     {
         // debug message
