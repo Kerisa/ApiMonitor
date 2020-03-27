@@ -1,7 +1,82 @@
 ﻿
+#include <array>
 #include <string>
+#include <vector>
 #include <Windows.h>
 #include "def.h"
+
+namespace stl_alloc
+{
+    // allocate的实际实现，简单封装new，当无法获得内存时，报错并退出
+    template <class T>
+    inline T* _allocate(ptrdiff_t size, T*) {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        T* tmp = (T*)param->f_HeapAlloc(param->heapHandle, 0, (size_t)(size * sizeof(T)));
+        if (!tmp)
+        {
+            // OOM
+            exit(1);
+        }
+        return tmp;
+    }
+
+    // deallocate的实际实现，简单封装delete
+    template <class T>
+    inline void _deallocate(T* buffer)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_HeapFree(param->heapHandle, 0, buffer);
+    }
+
+    // construct的实际实现，直接调用对象的构造函数
+    template <class T1, class T2>
+    inline void _construct(T1* p, const T2& value) { new(p) T1(value); }
+
+    // destroy的实际实现，直接调用对象的析构函数
+    template <class T>
+    inline void _destroy(T* ptr) { ptr->~T(); }
+
+    template <class T>
+    class allocator {
+    public:
+        typedef T           value_type;
+        typedef T*          pointer;
+        typedef const T*    const_pointer;
+        typedef T&          reference;
+        typedef const T&    const_reference;
+        typedef size_t      size_type;
+        typedef ptrdiff_t   difference_type;
+
+        // 构造函数
+        allocator() { return; }
+        template <class U>
+        allocator(const allocator<U>& c) {}
+
+        // rebind allocator of type U
+        template <class U>
+        struct rebind { typedef allocator<U> other; };
+
+        // allocate，deallocate，construct和destroy函数均调用上面的实际实现
+        // hint used for locality. ref.[Austern],p189
+        pointer allocate(size_type n, const void* hint = 0) {
+            return _allocate((difference_type)n, (pointer)0);
+        }
+        void deallocate(pointer p, size_type n) { _deallocate(p); }
+        void construct(pointer p, const T& value) { _construct(p, value); }
+        void destroy(pointer p) { _destroy(p); }
+
+        pointer address(reference x) { return (pointer)&x; }
+        const_pointer const_address(const_reference x) { return (const_pointer)&x; }
+
+        size_type max_size() const { return size_type(UINT_MAX / sizeof(T)); }
+    };
+
+    typedef std::basic_string<char, std::char_traits<char>, allocator<char>>          string;
+    typedef std::basic_stringstream<char, std::char_traits<char>, allocator<char>>    stringstream;
+}
+
+using stl_alloc::string;
+using stl_alloc::stringstream;
 
 
 ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
@@ -181,41 +256,28 @@ public:
     struct Entry
     {
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
-        uint32_t        mSelfIndex;
-        char            mBytesCode[32];
-        char*           mFuncName;
-        char            mParams[128];
-        FN_HookFunction mHookFunction;
-
-        void SetFuncName(const char* name)
-        {
-            if (!name)
-                return;
-            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-            if (mFuncName)
-                param->f_HeapFree(param->f_GetProcessHeap(), 0, mFuncName);
-            size_t len = strlen(name);
-            mFuncName = (char*)param->f_HeapAlloc(param->f_GetProcessHeap(), 0, len + 1);
-            strcpy_s(mFuncName, len + 1, name);
-        }
+        uint32_t                mSelfIndex;
+        std::array<char, 32>    mBytesCode;
+        string                  mFuncName;
+        std::array<char, 128>   mParams;
+        FN_HookFunction         mHookFunction;
 
         void Reset(uint32_t index)
         {
             mHookFunction = CommonHookFunction;
             mSelfIndex = index;
-            mFuncName = 0;
-            memset(mBytesCode, 0, sizeof(mBytesCode));
-            memset(mParams,    0, sizeof(mParams));
+            memset(mBytesCode.data(), 0, sizeof(mBytesCode));
+            memset(mParams.data(),    0, sizeof(mParams));
         }
     };
     static void __stdcall CommonHookFunction(uint32_t self_index)
     {
         Entry* e = msEntries.GetEntry(self_index);
         Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
-            << ", func name: " << (e ? e->mFuncName : "<idx error>")
-            << ", invoke time: " << (e ? *(int*)e->mParams : -1));
+            << ", func name: " << (e ? e->mFuncName.c_str() : "<idx error>")
+            << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
         if (e)
-            _InlineInterlockedAdd((LONG*)e->mParams, 1);
+            _InlineInterlockedAdd((LONG*)e->mParams.data(), 1);
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
     {
@@ -277,7 +339,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
         Vlog("[AddHookRoutine] add new entry failed, skip");
         return 0;
     }
-    e->SetFuncName(funcName);
+    e->mFuncName = funcName;
 
     if (strcmp(funcName, "LdrLoadDll"))
     {
@@ -324,7 +386,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
         e->mBytesCode[5] = '\xcc';
     }
 
-    ULONG_PTR newRva = (ULONG_PTR)e->mBytesCode - (ULONG_PTR)hmod;
+    ULONG_PTR newRva = (ULONG_PTR)e->mBytesCode.data() - (ULONG_PTR)hmod;
     Vlog("[AddHookRoutine] finish, new rva: " << (PVOID)newRva);
     return newRva;
 }
@@ -470,9 +532,13 @@ void Entry2()
     param->f_CreateToolhelp32Snapshot = (FN_CreateToolhelp32Snapshot)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateToolhelp32Snapshot");
     param->f_Module32First = (FN_Module32First)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32First");
     param->f_Module32Next = (FN_Module32Next)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32Next");
+    param->f_HeapCreate = (FN_HeapCreate)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapCreate");
     param->f_HeapAlloc = (FN_HeapAlloc)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapAlloc");    
     param->f_HeapFree = (FN_HeapFree)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapFree");
     param->f_GetProcessHeap = (FN_GetProcessHeap)param->f_GetProcAddress((HMODULE)param->kernel32, "GetProcessHeap");
+
+    // CeateHeap
+    param->heapHandle = param->f_HeapCreate(0, 1024 * 1024 * 10, 0);
 
     {
         // debug message
@@ -504,7 +570,7 @@ DWORD WINAPI Recover(LPVOID pv)
     return 0;
 }
 
-/*__declspec(naked)*/ void Entry()
+void Entry()
 {
     Entry2();
 
