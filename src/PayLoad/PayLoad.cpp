@@ -7,6 +7,14 @@
 
 namespace Allocator
 {
+    void InitAllocator()
+    {
+        // CeateHeap
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->NormalHeapHandle = param->f_HeapCreate(0, 1024 * 1024 * 10, 0);
+        param->ExecuteHeapHandle = param->f_HeapCreate(HEAP_CREATE_ENABLE_EXECUTE, 1024 * 1024 * 1, 0);
+    }
+
     void* MallocExe(size_t s)
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -161,6 +169,49 @@ private:
 #else
     #define Vlog(cond)
 #endif
+
+class PipeLine
+{
+public:
+    static constexpr const char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
+    bool ConnectServer()
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+        int busyRetry = 5;
+
+        while (busyRetry--)
+        {
+            mPipe = param->f_CreateFileA(PIPE_NAME, GENERIC_READ | GENERIC_WRITE,
+                0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL
+            );
+            if (mPipe != INVALID_HANDLE_VALUE)
+                break;
+
+            if (param->f_GetLastError() != ERROR_PIPE_BUSY)
+            {
+                Vlog("Could not open pipe. GLE=%d\n", param->f_GetLastError());
+                return false;
+            }
+
+            if (!param->f_WaitNamedPipeA(PIPE_NAME, NMPWAIT_USE_DEFAULT_WAIT))
+            {
+                Vlog("Could not open pipe: 20 second wait timed out.");
+                return false;
+            }
+        }
+
+        DWORD dwMode = PIPE_READMODE_MESSAGE;
+        if (!param->f_SetNamedPipeHandleState(mPipe, &dwMode, NULL, NULL))
+        {
+            Vlog("SetNamedPipeHandleState failed. GLE=%d\n", param->f_GetLastError());
+            return false;
+        }
+        return true;
+    }
+
+    HANDLE mPipe;
+};
 
 class HookEntries
 {
@@ -509,7 +560,7 @@ ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
     return pResult;
 }
 
-void Entry2()
+void GetModules()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     param->f_LdrLoadDll = (FN_LdrLoadDll)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrLoadDll");
@@ -523,8 +574,11 @@ void Entry2()
     NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
     param->kernelBase = (LPVOID)hKernel;
     param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)hKernel, "GetProcAddress");
+}
 
-    // get more api
+void GetApis()
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     param->f_GetModuleHandleA = (FN_GetModuleHandleA)param->f_GetProcAddress((HMODULE)param->kernelBase, "GetModuleHandleA");
     param->f_OpenThread = (FN_OpenThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "OpenThread");
     param->f_SuspendThread = (FN_SuspendThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "SuspendThread");
@@ -541,27 +595,32 @@ void Entry2()
     param->f_Module32First = (FN_Module32First)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32First");
     param->f_Module32Next = (FN_Module32Next)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32Next");
     param->f_HeapCreate = (FN_HeapCreate)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapCreate");
-    param->f_HeapAlloc = (FN_HeapAlloc)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapAlloc");    
+    param->f_HeapAlloc = (FN_HeapAlloc)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapAlloc");
     param->f_HeapFree = (FN_HeapFree)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapFree");
     param->f_GetProcessHeap = (FN_GetProcessHeap)param->f_GetProcAddress((HMODULE)param->kernel32, "GetProcessHeap");
+    param->f_CreateFileA = (FN_CreateFileA)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateFileA");
+    param->f_ReadFile = (FN_ReadFile)param->f_GetProcAddress((HMODULE)param->kernel32, "ReadFile");
+    param->f_WriteFile = (FN_WriteFile)param->f_GetProcAddress((HMODULE)param->kernel32, "WriteFile");
+    param->f_WaitNamedPipeA = (FN_WaitNamedPipeA)param->f_GetProcAddress((HMODULE)param->kernel32, "WaitNamedPipeA");
+    param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
+    param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
+}
 
-    // CeateHeap
-    param->NormalHeapHandle  = param->f_HeapCreate(0, 1024 * 1024 * 10, 0);
-    param->ExecuteHeapHandle = param->f_HeapCreate(HEAP_CREATE_ENABLE_EXECUTE, 1024 * 1024 * 1, 0);
+void DebugMessage()
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
 
-    {
-        // debug message
-        wcscpy_s(buffer, L"User32.dll");
-        name.Length = wcslen(buffer) * sizeof(wchar_t);
-        HANDLE hUser32 = 0;
-        status = param->f_LdrLoadDll(0, 0, &name, &hUser32);
-        FN_MessageBoxA pMessageBox = (FN_MessageBoxA)param->f_GetProcAddress((HMODULE)hUser32, "MessageBoxA");
-        char buf[32];
-        sprintf_s(buf, sizeof(buf), "pid: %#x", param->dwProcessId);
-        pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
-    }
-
-    HookLoadedModules();
+    wchar_t buffer[MAX_PATH] = L"User32.dll";
+    UNICODE_STRING name = { 0 };
+    name.Length = wcslen(buffer) * sizeof(wchar_t);
+    name.Buffer = buffer;
+    name.MaximumLength = sizeof(buffer);
+    HANDLE hUser32 = 0;
+    NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hUser32);
+    FN_MessageBoxA pMessageBox = (FN_MessageBoxA)param->f_GetProcAddress((HMODULE)hUser32, "MessageBoxA");
+    char buf[32];
+    sprintf_s(buf, sizeof(buf), "pid: %#x", param->dwProcessId);
+    pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
 }
 
 DWORD WINAPI Recover(LPVOID pv)
@@ -572,20 +631,27 @@ DWORD WINAPI Recover(LPVOID pv)
 
     HANDLE hT = param->f_OpenThread(THREAD_ALL_ACCESS, FALSE, param->dwThreadId);
     param->f_SuspendThread(hT);
-    //param->ctx.Eip = (ULONG_PTR)param->f_LdrInitializeThunk + 2;
     param->f_SetThreadContext(hT, &param->ctx);
     param->f_ResumeThread(hT);
     param->f_CloseHandle(hT);
     return 0;
 }
 
-void Entry()
+void ContinueExe()
 {
-    Entry2();
-
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     param->f_CreateThread(0, 0, Recover, 0, 0, 0);
-    while (1) { }
+    while (1) {}
+}
+
+void Entry()
+{
+    GetModules();
+    GetApis();
+    Allocator::InitAllocator();
+    DebugMessage();
+    HookLoadedModules();
+    ContinueExe();
 }
 
 #pragma optimize("", off)

@@ -102,6 +102,41 @@ typedef HANDLE (WINAPI * FN_HeapCreate)(
     SIZE_T dwInitialSize,
     SIZE_T dwMaximumSize);
 
+typedef HANDLE (WINAPI * FN_CreateFileA)(
+    LPCSTR                lpFileName,
+    DWORD                 dwDesiredAccess,
+    DWORD                 dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    DWORD                 dwCreationDisposition,
+    DWORD                 dwFlagsAndAttributes,
+    HANDLE                hTemplateFile);
+
+typedef BOOL (WINAPI * FN_ReadFile)(
+    HANDLE       hFile,
+    LPVOID       lpBuffer,
+    DWORD        nNumberOfBytesToRead,
+    LPDWORD      lpNumberOfBytesRead,
+    LPOVERLAPPED lpOverlapped);
+
+typedef BOOL (WINAPI * FN_WriteFile)(
+    HANDLE       hFile,
+    LPCVOID      lpBuffer,
+    DWORD        nNumberOfBytesToWrite,
+    LPDWORD      lpNumberOfBytesWritten,
+    LPOVERLAPPED lpOverlapped);
+
+typedef BOOL (WINAPI * FN_WaitNamedPipeA)(
+    LPCSTR lpNamedPipeName,
+    DWORD  nTimeOut);
+
+typedef BOOL (WINAPI * FN_SetNamedPipeHandleState)(
+    HANDLE  hNamedPipe,
+    LPDWORD lpMode,
+    LPDWORD lpMaxCollectionCount,
+    LPDWORD lpCollectDataTimeout);
+
+typedef DWORD (WINAPI * FN_GetLastError)();
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
@@ -140,4 +175,10 @@ struct PARAM
     FN_HeapAlloc                f_HeapAlloc;
     FN_HeapFree                 f_HeapFree;
     FN_GetProcessHeap           f_GetProcessHeap;
+    FN_CreateFileA              f_CreateFileA;
+    FN_ReadFile                 f_ReadFile;
+    FN_WriteFile                f_WriteFile;
+    FN_WaitNamedPipeA           f_WaitNamedPipeA;
+    FN_SetNamedPipeHandleState  f_SetNamedPipeHandleState;
+    FN_GetLastError             f_GetLastError;
 };
