@@ -5,7 +5,7 @@
 #include <Windows.h>
 #include "def.h"
 
-namespace stl_alloc
+namespace Allocator
 {
     void* MallocExe(size_t s)
     {
@@ -98,8 +98,8 @@ namespace stl_alloc
     typedef std::basic_stringstream<char, std::char_traits<char>, allocator<char>>    stringstream;
 }
 
-using stl_alloc::string;
-using stl_alloc::stringstream;
+using Allocator::string;
+using Allocator::stringstream;
 
 
 ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
@@ -286,7 +286,7 @@ public:
         std::array<char, 128>   mParams;
         FN_HookFunction         mHookFunction;
 
-        Entry() { mBytesCode = (char*)stl_alloc::MallocExe(ByteCodeLength); }
+        Entry() { mBytesCode = (char*)Allocator::MallocExe(ByteCodeLength); }
 
         void Reset(uint32_t index)
         {
@@ -319,7 +319,7 @@ public:
 
     Entry* AddEntry()
     {
-        Entry* ret = (Entry*)stl_alloc::Malloc(sizeof(Entry));
+        Entry* ret = (Entry*)Allocator::Malloc(sizeof(Entry));
         ret->Entry::Entry();
         ret->Reset(mEntryArray.size());
         mEntryArray.push_back(ret);
@@ -333,7 +333,7 @@ public:
     }
 
 private:
-    std::vector<Entry*, stl_alloc::allocator<Entry*>> mEntryArray;
+    std::vector<Entry*, Allocator::allocator<Entry*>> mEntryArray;
 };
 HookEntries HookEntries::msEntries;
 
