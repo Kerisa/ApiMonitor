@@ -101,46 +101,6 @@ namespace Allocator
 using Allocator::string;
 using Allocator::stringstream;
 
-
-ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
-{
-    PIMAGE_DOS_HEADER pimDH;
-    PIMAGE_NT_HEADERS pimNH;
-    PIMAGE_EXPORT_DIRECTORY pimED;
-    ULONG_PTR pResult = 0;
-    PDWORD pAddressOfNames;
-    PWORD  pAddressOfNameOrdinals;
-    DWORD i;
-    if (!phModule)
-        return 0;
-    pimDH = (PIMAGE_DOS_HEADER)phModule;
-    pimNH = (PIMAGE_NT_HEADERS)((char*)phModule + pimDH->e_lfanew);
-    pimED = (PIMAGE_EXPORT_DIRECTORY)(phModule + pimNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-    if (pimNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size == 0 || (ULONG_PTR)pimED <= phModule)
-        return 0;
-    if ((ULONG_PTR)pProcName < 0x10000)
-    {
-        if ((ULONG_PTR)pProcName >= pimED->NumberOfFunctions + pimED->Base || (ULONG_PTR)pProcName < pimED->Base)
-            return 0;
-        pResult = phModule + ((PDWORD)(phModule + pimED->AddressOfFunctions))[(ULONG_PTR)pProcName - pimED->Base];
-    }
-    else
-    {
-        pAddressOfNames = (PDWORD)(phModule + pimED->AddressOfNames);
-        for (i = 0; i < pimED->NumberOfNames; ++i)
-        {
-            char* pExportName = (char*)(phModule + pAddressOfNames[i]);
-            if (!strcmp(pProcName, pExportName))
-            {
-                pAddressOfNameOrdinals = (PWORD)(phModule + pimED->AddressOfNameOrdinals);
-                pResult = phModule + ((PDWORD)(phModule + pimED->AddressOfFunctions))[pAddressOfNameOrdinals[i]];
-                break;
-            }
-        }
-    }
-    return pResult;
-}
-
 class MLog
 {
 public:
@@ -201,76 +161,6 @@ private:
 #else
     #define Vlog(cond)
 #endif
-
-void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
-{
-    Vlog("[CollectModuleInfo] enter.");
-    const char* lpImage = (const char*)hmod;
-    PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
-    PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
-    DWORD exportRVA = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
-    PIMAGE_EXPORT_DIRECTORY imED = (PIMAGE_EXPORT_DIRECTORY)(lpImage + exportRVA);
-    long pExportSize = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
-    if (!(pExportSize == 0 || (ULONG_PTR)imED <= (ULONG_PTR)lpImage))
-    {
-        // 存在导出表
-        if (imED->NumberOfFunctions > 0)
-        {
-            PWORD lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
-            PDWORD lpNames = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
-            PDWORD lpRvas = (PDWORD)(lpImage + imED->AddressOfFunctions);
-            PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)(imNH + 1);
-            int nsec = imNH->FileHeader.NumberOfSections;
-            for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
-            {
-                DWORD rvafunc = lpRvas[i];
-                DWORD oftName = 0;
-                // 找出函数对应的名称
-                if (lpNames && lpOrdinals)
-                {
-                    for (DWORD k = 0; k < imED->NumberOfNames; ++k)
-                    {
-                        if (lpOrdinals[k] == i)
-                        {
-                            oftName = lpNames[k];
-                            break;
-                        }
-                    }
-                }
-                Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (oftName ? lpImage + oftName : "<null>"));
-
-                // 判断是否为转向函数导出
-                if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
-                {
-                    // 如果不是转向函数则遍历整个区段判断是否为数据导出。
-                    // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
-                    BOOL isDataExport = TRUE;
-                    PIMAGE_SECTION_HEADER ishcur;
-                    for (int j = 0; j < nsec; ++j)
-                    {
-                        ishcur = ish + j;
-                        if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
-                        {
-                            if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
-                            {
-                                isDataExport = FALSE;
-                                break;
-                            }
-                        }
-                    }
-                    if (isDataExport)
-                        Vlog("dataApi: -");
-                }
-                else
-                {
-                    // 是转向函数，设定转向信息
-                    Vlog("redirectApi: " << lpImage + rvafunc);
-                }
-            }
-        }
-    }
-    Vlog("[CollectModuleInfo] exit.");
-}
 
 class HookEntries
 {
@@ -479,6 +369,77 @@ void HookModuleExportTable(HMODULE hmod)
         param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
 }
 
+void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
+{
+    Vlog("[CollectModuleInfo] enter.");
+    const char* lpImage = (const char*)hmod;
+    PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
+    PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
+    DWORD exportRVA = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    PIMAGE_EXPORT_DIRECTORY imED = (PIMAGE_EXPORT_DIRECTORY)(lpImage + exportRVA);
+    long pExportSize = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
+    if (!(pExportSize == 0 || (ULONG_PTR)imED <= (ULONG_PTR)lpImage))
+    {
+        // 存在导出表
+        if (imED->NumberOfFunctions > 0)
+        {
+            PWORD lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
+            PDWORD lpNames = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
+            PDWORD lpRvas = (PDWORD)(lpImage + imED->AddressOfFunctions);
+            PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)(imNH + 1);
+            int nsec = imNH->FileHeader.NumberOfSections;
+            for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
+            {
+                DWORD rvafunc = lpRvas[i];
+                DWORD oftName = 0;
+                // 找出函数对应的名称
+                if (lpNames && lpOrdinals)
+                {
+                    for (DWORD k = 0; k < imED->NumberOfNames; ++k)
+                    {
+                        if (lpOrdinals[k] == i)
+                        {
+                            oftName = lpNames[k];
+                            break;
+                        }
+                    }
+                }
+                Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (oftName ? lpImage + oftName : "<null>"));
+
+                // 判断是否为转向函数导出
+                if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
+                {
+                    // 如果不是转向函数则遍历整个区段判断是否为数据导出。
+                    // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
+                    BOOL isDataExport = TRUE;
+                    PIMAGE_SECTION_HEADER ishcur;
+                    for (int j = 0; j < nsec; ++j)
+                    {
+                        ishcur = ish + j;
+                        if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
+                        {
+                            if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+                            {
+                                isDataExport = FALSE;
+                                break;
+                            }
+                        }
+                    }
+                    if (isDataExport)
+                        Vlog("dataApi: -");
+                }
+                else
+                {
+                    // 是转向函数，设定转向信息
+                    Vlog("redirectApi: " << lpImage + rvafunc);
+                }
+            }
+        }
+    }
+    Vlog("[CollectModuleInfo] exit.");
+}
+
+
 void HookLoadedModules()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -507,6 +468,45 @@ void HookLoadedModules()
     } while (param->f_Module32Next(hModuleSnap, &me32));
 
     param->f_CloseHandle(hModuleSnap);
+}
+
+ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
+{
+    PIMAGE_DOS_HEADER pimDH;
+    PIMAGE_NT_HEADERS pimNH;
+    PIMAGE_EXPORT_DIRECTORY pimED;
+    ULONG_PTR pResult = 0;
+    PDWORD pAddressOfNames;
+    PWORD  pAddressOfNameOrdinals;
+    DWORD i;
+    if (!phModule)
+        return 0;
+    pimDH = (PIMAGE_DOS_HEADER)phModule;
+    pimNH = (PIMAGE_NT_HEADERS)((char*)phModule + pimDH->e_lfanew);
+    pimED = (PIMAGE_EXPORT_DIRECTORY)(phModule + pimNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+    if (pimNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size == 0 || (ULONG_PTR)pimED <= phModule)
+        return 0;
+    if ((ULONG_PTR)pProcName < 0x10000)
+    {
+        if ((ULONG_PTR)pProcName >= pimED->NumberOfFunctions + pimED->Base || (ULONG_PTR)pProcName < pimED->Base)
+            return 0;
+        pResult = phModule + ((PDWORD)(phModule + pimED->AddressOfFunctions))[(ULONG_PTR)pProcName - pimED->Base];
+    }
+    else
+    {
+        pAddressOfNames = (PDWORD)(phModule + pimED->AddressOfNames);
+        for (i = 0; i < pimED->NumberOfNames; ++i)
+        {
+            char* pExportName = (char*)(phModule + pAddressOfNames[i]);
+            if (!strcmp(pProcName, pExportName))
+            {
+                pAddressOfNameOrdinals = (PWORD)(phModule + pimED->AddressOfNameOrdinals);
+                pResult = phModule + ((PDWORD)(phModule + pimED->AddressOfFunctions))[pAddressOfNameOrdinals[i]];
+                break;
+            }
+        }
+    }
+    return pResult;
 }
 
 void Entry2()
