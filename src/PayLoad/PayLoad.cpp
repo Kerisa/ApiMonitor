@@ -88,17 +88,21 @@ public:
     MLog& operator<<(HMODULE i) { return operator<<(static_cast<void*>(i)); }
     const char* str() const { return mBuf; }
 private:
-    static char mBuf[1024];
+    char mBuf[1024];
 };
-char MLog::mBuf[1024];
 
+#define PRINT_DEBUG_LOG
 
-#define Vlog(cond) do { \
-    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
-    MLog ml; \
-    ml << " [" << param->dwProcessId << "." << param->dwThreadId << "] " << cond << "\n"; \
-    param->f_OutputDebugStringA(ml.str()); \
-  } while (0)
+#ifdef PRINT_DEBUG_LOG
+    #define Vlog(cond) do { \
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
+        MLog ml; \
+        ml << " [" << param->dwProcessId << "." << param->dwThreadId << "] " << cond << "\n"; \
+        param->f_OutputDebugStringA(ml.str()); \
+      } while (0)
+#else
+    #define Vlog(cond)
+#endif
 
 void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
 {
@@ -211,7 +215,7 @@ public:
             << ", func name: " << (e ? e->mFuncName : "<idx error>")
             << ", invoke time: " << (e ? *(int*)e->mParams : -1));
         if (e)
-            ++(*(int*)e->mParams);
+            _InlineInterlockedAdd((LONG*)e->mParams, 1);
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
     {
