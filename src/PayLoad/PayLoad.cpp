@@ -278,52 +278,37 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
     if (strcmp(funcName, "LdrLoadDll"))
     {
         //
+        // push edx
+        // push ecx
         // push entry_index
         // push continue_offset
         // push hook_func
         // ret
-        // push original_func    ; <--- here continue_offset
+        // pop ecx              ; <--- here continue_offset
+        // pop edx
+        // push original_func
         // ret
         //
 
-        e->mBytesCode[0] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[1] = (ULONG_PTR)e->mSelfIndex;
-        e->mBytesCode[5] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[6] = (ULONG_PTR)&e->mBytesCode[16];
-        e->mBytesCode[10] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[11] = (ULONG_PTR)e->mHookFunction;
-        e->mBytesCode[15] = '\xc3';
-        e->mBytesCode[16] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[17] = (ULONG_PTR)oldEntry;
-        e->mBytesCode[21] = '\xc3';
-        e->mBytesCode[22] = '\xcc';
+        e->mBytesCode[0] = '\x52';
+        e->mBytesCode[1] = '\x51';
+        e->mBytesCode[2] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[3] = (ULONG_PTR)e->mSelfIndex;
+        e->mBytesCode[7] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[8] = (ULONG_PTR)&e->mBytesCode[18];
+        e->mBytesCode[12] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[13] = (ULONG_PTR)e->mHookFunction;
+        e->mBytesCode[17] = '\xc3';
+        e->mBytesCode[18] = '\x59';
+        e->mBytesCode[19] = '\x5a';
+        e->mBytesCode[20] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[21] = (ULONG_PTR)oldEntry;
+        e->mBytesCode[25] = '\xc3';
+        e->mBytesCode[26] = '\xcc';
     }
     else
     {
         // for LdrLoadDll
-        
-        //
-        // push continue_offset
-        // push original_func
-        // ret
-        // sub esp, c                   ; <--- here continue_offset
-        // mov dword ptr [esp-4], eax   ; save eax
-        // mov eax, dword ptr [esp]     ; save UNICODE_STRING of module name
-        // mov dword ptr [esp-8], eax
-        // mov eax, dword ptr [esp+c]   ; original return addr
-        // mov dword ptr [esp], eax
-        // mov eax, dword ptr [esp+8]   ; ouput module addr
-        // mov eax, dword ptr [eax]
-        // mov dword ptr [esp+c], eax
-        // mov eax, dword ptr [esp-8]   ; module name
-        // add eax, 4
-        // mov eax, dword ptr [eax]
-        // mov dword ptr [esp+8], eax
-        // mov dword ptr[esp+4], entry_index
-        // mov eax, dword ptr [esp-4]   ; restore eax
-        // push hook_func          
-        // ret
-        //
 
         //
         // push <LdrLoadDllHookFunction>
@@ -418,11 +403,6 @@ void HookModuleExportTable(HMODULE hmod)
     Vlog("[HookModuleExportTable] finish");
     if (oldProtect != 0)
         param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
-}
-
-void HookLdrLoadDll()
-{
-
 }
 
 void HookLoadedModules()
