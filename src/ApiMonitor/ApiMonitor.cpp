@@ -4,6 +4,7 @@
 #include <vector>
 #include <windows.h>
 #include "def.h"
+#include "NamedPipe.h"
 
 typedef struct reloc_line
 {
@@ -77,8 +78,11 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     SIZE_T W = 0;
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
     return (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
-    //return (PVOID)((ULONG_PTR)((PIMAGE_NT_HEADERS)(imageData + ((PIMAGE_DOS_HEADER)imageData)->e_lfanew))->OptionalHeader.AddressOfEntryPoint + (ULONG_PTR)newBase);
-    //return (PVOID)((ULONG_PTR)executeProc - (ULONG_PTR)imageData + (ULONG_PTR)newBase);
+}
+
+void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize)
+{
+
 }
 
 int main(int argc, char** argv)
@@ -96,17 +100,7 @@ int main(int argc, char** argv)
     PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
     SIZE_T R = 0;
-    //FN_LdrInitializeThunk pLdrInitializeThunk = (FN_LdrInitializeThunk)GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrInitializeThunk");
-    //char scode[8] = { 0 };
-    //scode[0] = '\x68';
-    //*(PDWORD)&scode[1] = (DWORD)oep;
-    //scode[5] = '\xc3';
-    //scode[6] = '\xeb';
-    //scode[7] = '\xf8';
-    //WriteProcessMemory(pi.hProcess, (LPVOID)((ULONG_PTR)pLdrInitializeThunk - 6), scode, 8, &R);
-
     PARAM param;
-    //memcpy_s(param.LdrInitializeThunkOEP, sizeof(param.LdrInitializeThunkOEP), pLdrInitializeThunk, 2);
     param.ntdllBase = (LPVOID)GetModuleHandleA("ntdll.dll");
     param.dwProcessId = pi.dwProcessId;
     param.dwThreadId = pi.dwThreadId;
@@ -117,7 +111,9 @@ int main(int argc, char** argv)
     copy.Eax = (DWORD)oep;
     SetThreadContext(pi.hThread, &copy);
 
-    //WriteProcessMemory(pi.hProcess, (LPVOID)((ULONG_PTR)pLdrInitializeThunk - 6), scode, 8, &R);
+    NamedPipeServer ps;
+    ps.StartServer(PipeDefine::PIPE_NAME, Reply);
+
     ResumeThread(pi.hThread);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);

@@ -173,16 +173,14 @@ private:
 class PipeLine
 {
 public:
-    static constexpr const char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
     bool ConnectServer()
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-
         int busyRetry = 5;
-
+        Vlog("[PipeLine::ConnectServer]");
         while (busyRetry--)
         {
-            mPipe = param->f_CreateFileA(PIPE_NAME, GENERIC_READ | GENERIC_WRITE,
+            mPipe = param->f_CreateFileA(PipeDefine::PIPE_NAME, GENERIC_READ | GENERIC_WRITE,
                 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL
             );
             if (mPipe != INVALID_HANDLE_VALUE)
@@ -190,13 +188,13 @@ public:
 
             if (param->f_GetLastError() != ERROR_PIPE_BUSY)
             {
-                Vlog("Could not open pipe. GLE=%d\n", param->f_GetLastError());
+                Vlog("[PipeLine::ConnectServer] Could not open pipe. GLE=%d\n", param->f_GetLastError());
                 return false;
             }
 
-            if (!param->f_WaitNamedPipeA(PIPE_NAME, NMPWAIT_USE_DEFAULT_WAIT))
+            if (!param->f_WaitNamedPipeA(PipeDefine::PIPE_NAME, NMPWAIT_USE_DEFAULT_WAIT))
             {
-                Vlog("Could not open pipe: 20 second wait timed out.");
+                Vlog("[PipeLine::ConnectServer] Could not open pipe: 20 second wait timed out.");
                 return false;
             }
         }
@@ -204,10 +202,24 @@ public:
         DWORD dwMode = PIPE_READMODE_MESSAGE;
         if (!param->f_SetNamedPipeHandleState(mPipe, &dwMode, NULL, NULL))
         {
-            Vlog("SetNamedPipeHandleState failed. GLE=%d\n", param->f_GetLastError());
+            Vlog("[PipeLine::ConnectServer] SetNamedPipeHandleState failed. GLE=%d\n", param->f_GetLastError());
             return false;
         }
+
+        Vlog("[PipeLine::ConnectServer] connected.");
         return true;
+    }
+
+    bool Send()
+    {
+        if (mPipe == INVALID_HANDLE_VALUE)
+        {
+            Vlog("[PipeLine::Send] pipe not ready.");
+            return false;
+        }
+        DWORD dummy = 0;
+        BOOL ret = WriteFile(mPipe, data, sizeInByte, &dummy, reinterpret_cast<LPOVERLAPPED>(&mData));
+        return !!ret;
     }
 
     HANDLE mPipe;
