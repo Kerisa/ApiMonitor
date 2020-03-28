@@ -42,6 +42,7 @@ namespace Detail
         }
 
         CloseHandle(lpPipeInst->hPipeInst);
+        lpPipeInst->hPipeInst = NULL;
         lpPipeInst->Released = true;
         //if (lpPipeInst != NULL)
         //{
@@ -153,6 +154,7 @@ public:
 
     void StartServer(const std::string & name, ReplayFuncType reply, bool writeThrough);
     void StopServer();
+    bool IsRunning();
 
 private:
     bool CreateAndConnectInstance(HANDLE *pipe, LPOVERLAPPED ov);
@@ -327,6 +329,10 @@ void NamedPipeServer::NamedPipeServerImpl::StopServer()
     mPipeGroup.clear();
 }
 
+bool NamedPipeServer::NamedPipeServerImpl::IsRunning()
+{
+    return !mStop;
+}
 
 
 NamedPipeServer::NamedPipeServer()
@@ -342,6 +348,11 @@ NamedPipeServer::~NamedPipeServer()
 void NamedPipeServer::StartServer(const std::string & name, ReplayFuncType reply, bool writeThrough)
 {
     mImpl->StartServer(name, reply, writeThrough);
+}
+
+bool NamedPipeServer::IsRunning()
+{
+    return mImpl->IsRunning();
 }
 
 bool NamedPipeServer::StopServer()

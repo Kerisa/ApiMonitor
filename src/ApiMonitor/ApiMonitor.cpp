@@ -1,10 +1,12 @@
 ﻿
 #include <cassert>
 #include <iostream>
+#include <thread>
 #include <vector>
 #include <windows.h>
 #include "def.h"
 #include "NamedPipe.h"
+#include "pipe.pb.h"
 
 typedef struct reloc_line
 {
@@ -77,12 +79,36 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         LoadVReloc((ULONG_PTR)memData.data(), TRUE, delta);
     SIZE_T W = 0;
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
-    return (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+    PVOID oep = (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+    FreeLibrary(hDll2);
+    return oep;
 }
 
 void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize)
 {
+    printf("data arrive. size=%d\n", readDataSize);
+    if (readDataSize < sizeof(PipeDefine::MsgReq) + sizeof(size_t))
+    {
+        // 过短消息
+        printf("too short.");
+        return;
+    }
 
+    PipeDefine::Message* msg = (PipeDefine::Message*)readData;
+    switch (msg->Req)
+    {
+    case PipeDefine::Pipe_Req_Inited: {
+        Init m;
+        m.ParseFromArray(msg->Content, msg->ContentSize);
+        m.set_dummy(m.dummy() + 1);
+        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+        msg2->Ack = PipeDefine::Pipe_Ack_Inited;
+        msg2->ContentSize = m.ByteSize();
+        m.SerializePartialToArray(msg2->Content, msg2->ContentSize);
+        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+        break;
+    }
+    }
 }
 
 int main(int argc, char** argv)
@@ -112,10 +138,19 @@ int main(int argc, char** argv)
     SetThreadContext(pi.hThread, &copy);
 
     NamedPipeServer ps;
-    ps.StartServer(PipeDefine::PIPE_NAME, Reply);
+    std::thread th = std::thread([&]() {
+        ps.StartServer(PipeDefine::PIPE_NAME, Reply);
+    });
 
+    while (!ps.IsRunning())
+        Sleep(1);
     ResumeThread(pi.hThread);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+
+    while (1)
+        Sleep(1);
+    ps.StopServer();
+    th.join();
     return 0;
 }

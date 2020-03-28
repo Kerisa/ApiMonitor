@@ -192,7 +192,7 @@ public:
 
             if (param->f_GetLastError() != ERROR_PIPE_BUSY)
             {
-                Vlog("[PipeLine::ConnectServer] Could not open pipe. GLE=%d\n", param->f_GetLastError());
+                Vlog("[PipeLine::ConnectServer] Could not open pipe. GLE: " << param->f_GetLastError());
                 return false;
             }
 
@@ -206,27 +206,33 @@ public:
         DWORD dwMode = PIPE_READMODE_MESSAGE;
         if (!param->f_SetNamedPipeHandleState(mPipe, &dwMode, NULL, NULL))
         {
-            Vlog("[PipeLine::ConnectServer] SetNamedPipeHandleState failed. GLE=%d\n", param->f_GetLastError());
+            Vlog("[PipeLine::ConnectServer] SetNamedPipeHandleState failed. GLE: " << param->f_GetLastError());
             return false;
         }
 
-        Vlog("[PipeLine::ConnectServer] connected.");
-        return true;
+        Vlog("[PipeLine::ConnectServer] connected. " << mPipe);
+        return mPipe != INVALID_HANDLE_VALUE;
     }
 
-    bool Send(PipeDefine::MsgReq msg, const std::vector<char, Allocator::allocator<char>> & content)
+    bool Send(PipeDefine::MsgReq type, const std::vector<char, Allocator::allocator<char>> & content)
     {
         if (mPipe == INVALID_HANDLE_VALUE)
         {
             Vlog("[PipeLine::Send] pipe not ready.");
             return false;
         }
+
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
         DWORD dummy = 0;
-        std::vector<char, Allocator::allocator<char>> m(sizeof(PipeDefine::MsgReq) + sizeof(size_t));
-        *(PipeDefine::MsgReq*)&m.data()[0] = msg;
-        *(size_t*)&m.data()[sizeof(PipeDefine::MsgReq)] = content.size();
+        std::vector<char, Allocator::allocator<char>> m(PipeDefine::Message::HeaderLength);
+        PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
+        ptr->Req = type;
+        ptr->ContentSize = content.size();
         m.insert(m.end(), content.begin(), content.end());
-        BOOL ret = WriteFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        Vlog("[PipeLine::Send] msg type: " << type << ", size: " << m.size());
+        BOOL ret = param->f_WriteFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        if (!ret)
+            Vlog("[PipeLine::Send] result: " << ret << ", err: " << param->f_GetLastError());
         return !!ret;
     }
 
@@ -237,25 +243,27 @@ public:
             Vlog("[PipeLine::Recv] pipe not ready.");
             return false;
         }
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        char buffer[512];
+        BOOL ret = 0;
         DWORD dummy = 0;
-        std::vector<char, Allocator::allocator<char>> m(sizeof(PipeDefine::MsgAck) + sizeof(size_t));
-        BOOL ret = ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        DWORD dataToRead = PipeDefine::Message::HeaderLength;
+        std::vector<char, Allocator::allocator<char>> m(512);
+        ret = param->f_ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
         if (!ret)
         {
-            Vlog("[PipeLine::Recv] pipe read header failed.");
+            Vlog("[PipeLine::Recv] pipe read header failed, err: " << param->f_GetLastError());
             return false;
         }
-        msg = *(PipeDefine::MsgAck*)&m.data()[0];
-        size_t string_size = *(size_t*)&m.data()[sizeof(PipeDefine::MsgAck)];
-        m.resize(string_size);
-        ret = ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
-        if (!ret)
+        PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
+        if (ptr->ContentSize >= m.size() - PipeDefine::Message::HeaderLength)
         {
-            Vlog("[PipeLine::Recv] pipe read content failed.");
+            Vlog("[PipeLine::Recv] message may corrupted, type: " << ptr->Ack << ", size: " << ptr->ContentSize);
             return false;
         }
-        content.assign(m.begin(), m.end());
-        return !!ret;
+        msg = ptr->Ack;
+        content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
+        return true;
     }
 
     HANDLE mPipe;
