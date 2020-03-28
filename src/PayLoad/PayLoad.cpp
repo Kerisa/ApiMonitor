@@ -4,6 +4,8 @@
 #include <vector>
 #include <Windows.h>
 #include "def.h"
+#include "pipe.pb.h"
+
 
 namespace Allocator
 {
@@ -173,6 +175,8 @@ private:
 class PipeLine
 {
 public:
+    static PipeLine msPipe;
+
     bool ConnectServer()
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -210,7 +214,7 @@ public:
         return true;
     }
 
-    bool Send()
+    bool Send(PipeDefine::MsgReq msg, const std::vector<char, Allocator::allocator<char>> & content)
     {
         if (mPipe == INVALID_HANDLE_VALUE)
         {
@@ -218,12 +222,45 @@ public:
             return false;
         }
         DWORD dummy = 0;
-        BOOL ret = WriteFile(mPipe, data, sizeInByte, &dummy, reinterpret_cast<LPOVERLAPPED>(&mData));
+        std::vector<char, Allocator::allocator<char>> m(sizeof(PipeDefine::MsgReq) + sizeof(size_t));
+        *(PipeDefine::MsgReq*)&m.data()[0] = msg;
+        *(size_t*)&m.data()[sizeof(PipeDefine::MsgReq)] = content.size();
+        m.insert(m.end(), content.begin(), content.end());
+        BOOL ret = WriteFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        return !!ret;
+    }
+
+    bool Recv(PipeDefine::MsgAck & msg, std::vector<char, Allocator::allocator<char>> & content)
+    {
+        if (mPipe == INVALID_HANDLE_VALUE)
+        {
+            Vlog("[PipeLine::Recv] pipe not ready.");
+            return false;
+        }
+        DWORD dummy = 0;
+        std::vector<char, Allocator::allocator<char>> m(sizeof(PipeDefine::MsgAck) + sizeof(size_t));
+        BOOL ret = ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        if (!ret)
+        {
+            Vlog("[PipeLine::Recv] pipe read header failed.");
+            return false;
+        }
+        msg = *(PipeDefine::MsgAck*)&m.data()[0];
+        size_t string_size = *(size_t*)&m.data()[sizeof(PipeDefine::MsgAck)];
+        m.resize(string_size);
+        ret = ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
+        if (!ret)
+        {
+            Vlog("[PipeLine::Recv] pipe read content failed.");
+            return false;
+        }
+        content.assign(m.begin(), m.end());
         return !!ret;
     }
 
     HANDLE mPipe;
 };
+PipeLine PipeLine::msPipe;
 
 class HookEntries
 {
@@ -256,6 +293,7 @@ public:
         Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
             << ", func name: " << (e ? e->mFuncName.c_str() : "<idx error>")
             << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
+        
         if (e)
             _InlineInterlockedAdd((LONG*)e->mParams.data(), 1);
     }
@@ -618,6 +656,12 @@ void GetApis()
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
 }
 
+void BuildPipe()
+{
+    Vlog("[BuildPipe]");
+    PipeLine::msPipe.ConnectServer();
+}
+
 void DebugMessage()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -633,6 +677,16 @@ void DebugMessage()
     char buf[32];
     sprintf_s(buf, sizeof(buf), "pid: %#x", param->dwProcessId);
     pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
+
+    Init m;
+    m.set_dummy(0xaa55ccdd);
+    std::vector<char, Allocator::allocator<char>> content(m.ByteSize());
+    m.SerializeToArray(content.data(), content.size());
+    PipeLine::msPipe.Send(PipeDefine::Pipe_Req_Inited, content);
+    PipeDefine::MsgAck recv_type;
+    content.clear();
+    PipeLine::msPipe.Recv(recv_type, content);
+    m.ParseFromArray(content.data(), content.size());
 }
 
 DWORD WINAPI Recover(LPVOID pv)
@@ -661,6 +715,7 @@ void Entry()
     GetModules();
     GetApis();
     Allocator::InitAllocator();
+    BuildPipe();
     DebugMessage();
     HookLoadedModules();
     ContinueExe();
