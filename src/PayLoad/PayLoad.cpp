@@ -152,7 +152,7 @@ public:
         BOOL ret = 0;
         DWORD dummy = 0;
         DWORD dataToRead = PipeDefine::Message::HeaderLength;
-        std::vector<char, Allocator::allocator<char>> m(512);
+        std::vector<char, Allocator::allocator<char>> m(1024*1024);
         ret = param->f_ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
         if (!ret)
         {
@@ -167,6 +167,7 @@ public:
         }
         msg = ptr->Ack;
         content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
+        Vlog("[PipeLine::Recv] msg type: " << msg << ", size: " << content.size());
         return true;
     }
 
@@ -382,11 +383,14 @@ void HookModuleExportTable(HMODULE hmod)
         param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
 }
 
-void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
+void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::Msg_ModuleApis& pbModuleApis)
 {
-    PipeDefine::Msg_ModuleApis pbModuleApis;
-
     Vlog("[CollectModuleInfo] enter.");
+
+    pbModuleApis.module_name = modname;
+    pbModuleApis.module_path = modpath;
+    pbModuleApis.module_base = (long long)hmod;
+
     const char* lpImage = (const char*)hmod;
     PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
     PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
@@ -405,6 +409,7 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
             int nsec = imNH->FileHeader.NumberOfSections;
             for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
             {
+                PipeDefine::Msg_ModuleApis::ApiDetail ad;
                 DWORD rvafunc = lpRvas[i];
                 DWORD oftName = 0;
                 // 找出函数对应的名称
@@ -420,7 +425,11 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
                     }
                 }
                 Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (oftName ? lpImage + oftName : "<null>"));
-
+                ad.rva = rvafunc;
+                ad.va = rvafunc + (DWORD)lpImage;
+                ad.name = (oftName ? lpImage + oftName : "<null>");
+                bool dataApi = false;
+                bool foawrdApi = false;
                 // 判断是否为转向函数导出
                 if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
                 {
@@ -442,12 +451,16 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath)
                     }
                     if (isDataExport)
                         Vlog("dataApi: -");
+                    ad.data_api = !!isDataExport;
+                    ad.forward_api = false;
                 }
                 else
                 {
                     // 是转向函数，设定转向信息
                     Vlog("redirectApi: " << lpImage + rvafunc);
+                    ad.forward_api = true;
                 }
+                pbModuleApis.apis.push_back(ad);
             }
         }
     }
@@ -477,7 +490,18 @@ void HookLoadedModules()
     do
     {
         Vlog("[HookLoadedModules] process: " << me32.szModule << ", image base: " << (LPVOID)me32.modBaseAddr << ", path: " << me32.szExePath);
-        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath);
+        PipeDefine::Msg_ModuleApis pbModuleApis;
+        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, pbModuleApis);
+
+        auto content = pbModuleApis.Serial();
+        PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ModuleApiList, content);
+        PipeDefine::MsgAck recv_type;
+        content.clear();
+        PipeLine::msPipe.Recv(recv_type, content);
+        PipeDefine::Msg_ApiFilter filter;
+        filter.Unserial(content);
+        Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::Msg_ApiFilter::Api& a) { return a.filter; }));
+
         HookModuleExportTable((HMODULE)me32.modBaseAddr);
 
     } while (param->f_Module32Next(hModuleSnap, &me32));

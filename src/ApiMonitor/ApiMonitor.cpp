@@ -85,7 +85,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     return oep;
 }
 
-void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize)
+void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer)
 {
     printf("data arrive. size=%d\n", readDataSize);
     if (readDataSize < sizeof(PipeDefine::MsgReq) + sizeof(size_t))
@@ -107,7 +107,31 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
         msg2->Ack = PipeDefine::Pipe_Ack_Inited;
         msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, 4096, str.data(), str.size());
+        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+        break;
+    }
+    case PipeDefine::Pipe_Req_ModuleApiList: {
+        PipeDefine::Msg_ModuleApis m;
+        PipeDefine::Msg_ApiFilter  f;
+        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+        m.Unserial(str);
+        printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
+        f.module_name = m.module_name;
+        for (size_t i = 0; i < m.apis.size(); ++i)
+        {
+            printf("  (%05u) name: %s, va: %llx, rva: %llx, dataExp: %s, forward: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
+                (m.apis[i].data_api ? "yes" : "no"), (m.apis[i].forward_api ? "yes" : "no"));
+            PipeDefine::Msg_ApiFilter::Api a;
+            a.api_name = m.apis[i].name;
+            a.filter = true;
+            f.apis.push_back(a);
+        }
+        str = f.Serial();
+        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+        msg2->Ack = PipeDefine::Pipe_Ack_FilterApi;
+        msg2->ContentSize = str.size();
+        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
         *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
         break;
     }

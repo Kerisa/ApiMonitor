@@ -14,7 +14,7 @@ namespace Detail
 {
     typedef struct
     {
-        static constexpr int BUFSIZE = 4096;
+        static constexpr int BUFSIZE = 1024*1024;
 
         OVERLAPPED  oOverlap;
         HANDLE      hPipeInst;
@@ -85,7 +85,8 @@ namespace Detail
                 lpPipeInst->chRequest,
                 cbBytesRead,
                 lpPipeInst->chReply,
-                &lpPipeInst->cbToWrite
+                &lpPipeInst->cbToWrite,
+                sizeof(lpPipeInst->chReply)
             );
 
             fWrite = WriteFileEx(
@@ -102,7 +103,7 @@ namespace Detail
 
 
     struct ClientImplData {
-        static constexpr int BUFSIZE = 4096;
+        static constexpr int BUFSIZE = 4096 * 4;
 
         ClientImplData() {
             memset(&mSendOV, 0, sizeof(mSendOV));
