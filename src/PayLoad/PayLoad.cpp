@@ -383,13 +383,13 @@ void HookModuleExportTable(HMODULE hmod)
         param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
 }
 
-void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::Msg_ModuleApis& pbModuleApis)
+void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::Msg_ModuleApis& msgModuleApis)
 {
     Vlog("[CollectModuleInfo] enter.");
 
-    pbModuleApis.module_name = modname;
-    pbModuleApis.module_path = modpath;
-    pbModuleApis.module_base = (long long)hmod;
+    msgModuleApis.module_name = modname;
+    msgModuleApis.module_path = modpath;
+    msgModuleApis.module_base = (long long)hmod;
 
     const char* lpImage = (const char*)hmod;
     PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
@@ -460,7 +460,7 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
                     Vlog("redirectApi: " << lpImage + rvafunc);
                     ad.forward_api = true;
                 }
-                pbModuleApis.apis.push_back(ad);
+                msgModuleApis.apis.push_back(ad);
             }
         }
     }
@@ -490,10 +490,10 @@ void HookLoadedModules()
     do
     {
         Vlog("[HookLoadedModules] process: " << me32.szModule << ", image base: " << (LPVOID)me32.modBaseAddr << ", path: " << me32.szExePath);
-        PipeDefine::Msg_ModuleApis pbModuleApis;
-        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, pbModuleApis);
+        PipeDefine::Msg_ModuleApis msgModuleApis;
+        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, msgModuleApis);
 
-        auto content = pbModuleApis.Serial();
+        auto content = msgModuleApis.Serial();
         PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ModuleApiList, content);
         PipeDefine::MsgAck recv_type;
         content.clear();
@@ -616,15 +616,15 @@ void DebugMessage()
     sprintf_s(buf, sizeof(buf), "pid: %#x", param->dwProcessId);
     pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
 
-    PipeDefine::Msg_Init m;
-    m.dummy = 0xaa55ccdd;
-    auto content = m.Serial();
+    PipeDefine::Msg_Init msgInit;
+    msgInit.dummy = 0xaa55ccdd;
+    auto content = msgInit.Serial();
     PipeLine::msPipe.Send(PipeDefine::Pipe_Req_Inited, content);
     PipeDefine::MsgAck recv_type;
     content.clear();
     PipeLine::msPipe.Recv(recv_type, content);
-    m.Unserial(content);
-    Vlog("[DebugMessage] dummy: " << (LPVOID)m.dummy);
+    msgInit.Unserial(content);
+    Vlog("[DebugMessage] dummy: " << (LPVOID)msgInit.dummy);
 }
 
 DWORD WINAPI Recover(LPVOID pv)
