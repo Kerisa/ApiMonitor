@@ -62,7 +62,7 @@ private:
     char mBuf[1024];
 };
 
-#define PRINT_DEBUG_LOG
+//#define PRINT_DEBUG_LOG
 
 #ifdef PRINT_DEBUG_LOG
     #define Vlog(cond) do { \
@@ -72,7 +72,7 @@ private:
         param->f_OutputDebugStringA(ml.str()); \
       } while (0)
 #else
-    #define Vlog(cond)
+    #define Vlog(cond) ((void*)0)
 #endif
 
 class PipeLine
@@ -328,7 +328,7 @@ void HookModuleExportTable(HMODULE hmod)
     imEDNew->AddressOfNameOrdinals += delta;
     PDWORD oldFunc = (PDWORD)(lpImage + imED->AddressOfFunctions);
     PDWORD newFunc = (PDWORD)(lpImage + imEDNew->AddressOfFunctions);
-    for (int i = 0; i < imED->NumberOfFunctions; ++i)
+    for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
     {
         newFunc[i] += delta;
     }
@@ -340,7 +340,7 @@ void HookModuleExportTable(HMODULE hmod)
     char tmpFuncNameBuffer[32] = { 0 };
     PDWORD lpNames    = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
     PWORD  lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
-    for (int i = 0; i < imED->NumberOfFunctions; ++i)
+    for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
     {
         if (oldFunc[i] >= exportRVA && oldFunc[i] < exportRVA + pExportSize)
         {
@@ -350,7 +350,7 @@ void HookModuleExportTable(HMODULE hmod)
 
         // 查找名称
         const char* funcName = "";
-        for (int k = 0; k < imED->NumberOfNames; ++k)
+        for (DWORD k = 0; k < imED->NumberOfNames; ++k)
         {
             if (lpOrdinals[k] == i)
             {
@@ -568,9 +568,9 @@ void GetModules()
     param->f_LdrInitializeThunk = (FN_LdrInitializeThunk)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrInitializeThunk");
     wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
     UNICODE_STRING name = { 0 };
-    name.Length = wcslen(buffer) * sizeof(wchar_t);
+    name.Length = static_cast<USHORT>(wcslen(buffer) * sizeof(wchar_t));
     name.Buffer = buffer;
-    name.MaximumLength = sizeof(buffer);
+    name.MaximumLength = static_cast<USHORT>(sizeof(buffer));
     HANDLE hKernel = 0;
     NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
     param->kernelBase = (LPVOID)hKernel;
@@ -619,9 +619,9 @@ void DebugMessage()
 
     wchar_t buffer[MAX_PATH] = L"User32.dll";
     UNICODE_STRING name = { 0 };
-    name.Length = wcslen(buffer) * sizeof(wchar_t);
+    name.Length = static_cast<USHORT>(wcslen(buffer) * sizeof(wchar_t));
     name.Buffer = buffer;
-    name.MaximumLength = sizeof(buffer);
+    name.MaximumLength = static_cast<USHORT>(sizeof(buffer));
     HANDLE hUser32 = 0;
     NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hUser32);
     FN_MessageBoxA pMessageBox = (FN_MessageBoxA)param->f_GetProcAddress((HMODULE)hUser32, "MessageBoxA");

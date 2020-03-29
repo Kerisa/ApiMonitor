@@ -82,7 +82,9 @@ namespace detail
             char c1[SerialItemSizeSpace];
         } u;
         static_assert(sizeof(u.size) == sizeof(u.c1), "");
-        u.size = n.size();
+        if (n.size() > USHRT_MAX)
+            throw "item size too large";
+        u.size = static_cast<SerialItemSize>(n.size());
         str.insert(str.end(), u.c1, u.c1 + sizeof(u.c1));
         str.insert(str.end(), n.begin(), n.end());
     }
