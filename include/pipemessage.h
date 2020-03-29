@@ -37,6 +37,9 @@ namespace PipeDefine
         char Content[1];
     };
 
+namespace detail
+{
+
     // 0            4            8    8+<size>        ?       ?     ?
     // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // + total size + item1 size + item1 + item2 size + item2 + ... +
@@ -104,7 +107,7 @@ namespace PipeDefine
     {
         if (str.size() <= from_byte_index + SerialItemSizeSpace)
             throw "msg too short";
-        
+
         SerialItemSize size = *(SerialItemSize*)&str[from_byte_index];
         if (sizeof(T) != size)
             throw "content type not match";
@@ -128,7 +131,13 @@ namespace PipeDefine
         return from_byte_index + SerialItemSizeSpace + size;
     }
 
-    struct Msg_Init
+} // namespace detail
+
+namespace msg
+{
+    using namespace detail;
+
+    struct Init
     {
         unsigned long dummy;
 
@@ -147,7 +156,7 @@ namespace PipeDefine
         }
     };
 
-    struct Msg_ModuleFilter
+    struct ModuleFilter
     {
         Allocator::string name;
         bool              filter;
@@ -170,7 +179,7 @@ namespace PipeDefine
     };
 
 
-    struct Msg_ApiFilter
+    struct ApiFilter
     {
         Allocator::string module_name;
         struct Api
@@ -211,7 +220,7 @@ namespace PipeDefine
         }
     };
 
-    struct Msg_ModuleApis
+    struct ModuleApis
     {
         Allocator::string module_name;
         Allocator::string module_path;
@@ -268,10 +277,13 @@ namespace PipeDefine
         }
     };
 
-    struct Msg_ApiInvoked
+    struct ApiInvoked
     {
         Allocator::string module_name;
         Allocator::string api_name;
         long              action;
     };
-}
+
+
+} // namespace msg
+} // namespace PipeDefine

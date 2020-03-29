@@ -383,7 +383,7 @@ void HookModuleExportTable(HMODULE hmod)
         param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
 }
 
-void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::Msg_ModuleApis& msgModuleApis)
+void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::msg::ModuleApis& msgModuleApis)
 {
     Vlog("[CollectModuleInfo] enter.");
 
@@ -409,7 +409,7 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
             int nsec = imNH->FileHeader.NumberOfSections;
             for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
             {
-                PipeDefine::Msg_ModuleApis::ApiDetail ad;
+                PipeDefine::msg::ModuleApis::ApiDetail ad;
                 DWORD rvafunc = lpRvas[i];
                 DWORD oftName = 0;
                 // 找出函数对应的名称
@@ -490,7 +490,7 @@ void HookLoadedModules()
     do
     {
         Vlog("[HookLoadedModules] process: " << me32.szModule << ", image base: " << (LPVOID)me32.modBaseAddr << ", path: " << me32.szExePath);
-        PipeDefine::Msg_ModuleApis msgModuleApis;
+        PipeDefine::msg::ModuleApis msgModuleApis;
         CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, msgModuleApis);
 
         auto content = msgModuleApis.Serial();
@@ -498,9 +498,9 @@ void HookLoadedModules()
         PipeDefine::MsgAck recv_type;
         content.clear();
         PipeLine::msPipe.Recv(recv_type, content);
-        PipeDefine::Msg_ApiFilter filter;
+        PipeDefine::msg::ApiFilter filter;
         filter.Unserial(content);
-        Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::Msg_ApiFilter::Api& a) { return a.filter; }));
+        Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
 
         HookModuleExportTable((HMODULE)me32.modBaseAddr);
 
@@ -616,7 +616,7 @@ void DebugMessage()
     sprintf_s(buf, sizeof(buf), "pid: %#x", param->dwProcessId);
     pMessageBox(0, "I'm here", buf, MB_ICONINFORMATION);
 
-    PipeDefine::Msg_Init msgInit;
+    PipeDefine::msg::Init msgInit;
     msgInit.dummy = 0xaa55ccdd;
     auto content = msgInit.Serial();
     PipeLine::msPipe.Send(PipeDefine::Pipe_Req_Inited, content);

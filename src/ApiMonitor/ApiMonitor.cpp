@@ -99,7 +99,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     switch (msg->Req)
     {
     case PipeDefine::Pipe_Req_Inited: {
-        PipeDefine::Msg_Init m;
+        PipeDefine::msg::Init m;
         std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
         m.Unserial(str);
         m.dummy += 1;
@@ -112,8 +112,8 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         break;
     }
     case PipeDefine::Pipe_Req_ModuleApiList: {
-        PipeDefine::Msg_ModuleApis m;
-        PipeDefine::Msg_ApiFilter  f;
+        PipeDefine::msg::ModuleApis m;
+        PipeDefine::msg::ApiFilter  f;
         std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
         m.Unserial(str);
         printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
@@ -122,7 +122,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         {
             printf("  (%05u) name: %s, va: %llx, rva: %llx, dataExp: %s, forward: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
                 (m.apis[i].data_api ? "yes" : "no"), (m.apis[i].forward_api ? "yes" : "no"));
-            PipeDefine::Msg_ApiFilter::Api a;
+            PipeDefine::msg::ApiFilter::Api a;
             a.api_name = m.apis[i].name;
             a.filter = true;
             f.apis.push_back(a);
