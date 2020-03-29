@@ -6,7 +6,6 @@
 #include <windows.h>
 #include "def.h"
 #include "NamedPipe.h"
-#include "pipe.pb.h"
 #include "pipemessage.h"
 
 typedef struct reloc_line

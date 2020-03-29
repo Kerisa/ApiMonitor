@@ -1,1 +1,0 @@
-..\bin\protoc.exe --cpp_out=. pipe.proto
