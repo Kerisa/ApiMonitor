@@ -139,6 +139,8 @@ typedef BOOL (WINAPI * FN_SetNamedPipeHandleState)(
 
 typedef DWORD (WINAPI * FN_GetLastError)();
 
+typedef DWORD (WINAPI * FN_GetCurrentThreadId)();
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
@@ -183,4 +185,5 @@ struct PARAM
     FN_WaitNamedPipeA           f_WaitNamedPipeA;
     FN_SetNamedPipeHandleState  f_SetNamedPipeHandleState;
     FN_GetLastError             f_GetLastError;
+    FN_GetCurrentThreadId       f_GetCurrentThreadId;
 };

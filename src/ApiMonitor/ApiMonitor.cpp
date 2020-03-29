@@ -138,6 +138,13 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
         break;
     }
+    case PipeDefine::Pipe_Req_ApiInvoked: {
+        PipeDefine::msg::ApiInvoked m;
+        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+        m.Unserial(str);
+        printf("Api Invoked: %s, %s, tid: %d, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), m.tid, m.times);
+        break;
+    }
     }
 }
 

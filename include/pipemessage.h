@@ -286,7 +286,31 @@ namespace msg
     {
         Allocator::string module_name;
         Allocator::string api_name;
+        unsigned long     tid;
+        long              times;
         long              action;
+
+        std::vector<char, Allocator::allocator<char>> Serial()
+        {
+            std::vector<char, Allocator::allocator<char>> vec;
+            SerialInit(vec);
+            SerialItem(vec, module_name);
+            SerialItem(vec, api_name);
+            SerialItem(vec, tid);
+            SerialItem(vec, times);
+            SerialItem(vec, action);
+            CalFinalLength(vec);
+            return vec;
+        }
+        void Unserial(std::vector<char, Allocator::allocator<char>>& str)
+        {
+            size_t idx = GetFirstItemIndex(str);
+            idx = ExtractItem(str, idx, module_name);
+            idx = ExtractItem(str, idx, api_name);
+            idx = ExtractItem(str, idx, tid);
+            idx = ExtractItem(str, idx, times);
+            idx = ExtractItem(str, idx, action);
+        }
     };
 
 

@@ -62,7 +62,7 @@ private:
     char mBuf[1024];
 };
 
-//#define PRINT_DEBUG_LOG
+#define PRINT_DEBUG_LOG
 
 #ifdef PRINT_DEBUG_LOG
     #define Vlog(cond) do { \
@@ -183,6 +183,7 @@ public:
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
         uint32_t                mSelfIndex;
         char*                   mBytesCode;
+        string                  mModuleName;
         string                  mFuncName;
         std::array<char, 128>   mParams;
         FN_HookFunction         mHookFunction;
@@ -195,6 +196,7 @@ public:
             mSelfIndex = index;
             memset(mBytesCode, 0, ByteCodeLength);
             memset(mParams.data(), 0, mParams.size());
+            mModuleName.clear();
             mFuncName.clear();
         }
     };
@@ -206,7 +208,20 @@ public:
             << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
         
         if (e)
+        {
             _InlineInterlockedAdd((LONG*)e->mParams.data(), 1);
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            PipeDefine::msg::ApiInvoked msgApiInvoke;
+            msgApiInvoke.module_name = e->mModuleName.c_str();
+            msgApiInvoke.api_name = e->mFuncName.c_str();
+            msgApiInvoke.tid = param->f_GetCurrentThreadId();
+            msgApiInvoke.times = *(int*)e->mParams.data();
+            auto content = msgApiInvoke.Serial();
+            PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ApiInvoked, content);
+            PipeDefine::MsgAck msg;
+            content.clear();
+            PipeLine::msPipe.Recv(msg, content);
+        }
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
     {
@@ -240,7 +255,7 @@ private:
 HookEntries HookEntries::msEntries;
 
 
-ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
+ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
@@ -249,6 +264,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
         Vlog("[AddHookRoutine] add new entry failed, skip");
         return 0;
     }
+    e->mModuleName = modname;
     e->mFuncName = funcName;
 
     if (strcmp(funcName, "LdrLoadDll"))
@@ -301,7 +317,7 @@ ULONG_PTR AddHookRoutine(HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const ch
     return newRva;
 }
 
-void HookModuleExportTable(HMODULE hmod)
+void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpath)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
 
@@ -360,10 +376,10 @@ void HookModuleExportTable(HMODULE hmod)
         }
         if (funcName[0] == '\0')
         {
-            sprintf_s(tmpFuncNameBuffer, sizeof(tmpFuncNameBuffer), "Number Export:%d", i + imED->Base);
+            sprintf_s(tmpFuncNameBuffer, sizeof(tmpFuncNameBuffer), "<ordinal %d>", i + imED->Base);
             funcName = tmpFuncNameBuffer;
         }
-        ULONG_PTR newRva = AddHookRoutine(hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
+        ULONG_PTR newRva = AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
         if (newRva)
             newFunc[i] = newRva;
         else
@@ -515,7 +531,7 @@ void HookLoadedModules()
         filter.Unserial(content);
         Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
 
-        HookModuleExportTable((HMODULE)me32.modBaseAddr);
+        HookModuleExportTable((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath);
 
     } while (param->f_Module32Next(hModuleSnap, &me32));
 
@@ -605,6 +621,7 @@ void GetApis()
     param->f_WaitNamedPipeA = (FN_WaitNamedPipeA)param->f_GetProcAddress((HMODULE)param->kernel32, "WaitNamedPipeA");
     param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
+    param->f_GetCurrentThreadId = (FN_GetCurrentThreadId)param->f_GetProcAddress((HMODULE)param->kernel32, "GetCurrentThreadId");
 }
 
 void BuildPipe()

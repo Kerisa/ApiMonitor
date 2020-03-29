@@ -81,6 +81,9 @@ namespace Detail
 
         if ((dwErr == 0) && (cbBytesRead != 0))
         {
+            // Ä¬ÈÏÎª 0
+            lpPipeInst->cbToWrite = 0;
+
             lpPipeInst->SetWriteMsg(
                 lpPipeInst->chRequest,
                 cbBytesRead,
