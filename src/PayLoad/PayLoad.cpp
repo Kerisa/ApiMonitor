@@ -3,7 +3,6 @@
 #include <vector>
 #include <Windows.h>
 #include "def.h"
-//#include "pipe.pb.h"
 #include "allocator.h"
 #include "pipemessage.h"
 
