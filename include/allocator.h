@@ -102,10 +102,8 @@ namespace Allocator
     };
 
     typedef std::basic_string<char, std::char_traits<char>, allocator<char>>          string;
-    typedef std::basic_stringstream<char, std::char_traits<char>, allocator<char>>    stringstream;
 #else
     using std::allocator;
     using std::string;
-    using std::stringstream;
 #endif
 }

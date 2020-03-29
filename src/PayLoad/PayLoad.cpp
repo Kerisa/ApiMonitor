@@ -9,13 +9,12 @@
 
 
 using Allocator::string;
-using Allocator::stringstream;
 
-class MLog
+class SStream
 {
 public:
-    MLog() { mBuf[0] = '\0'; }
-    MLog& operator<<(const char* s)
+    SStream() { mBuf[0] = '\0'; }
+    SStream& operator<<(const char* s)
     {
         if (s)
             strcat_s(mBuf, sizeof(mBuf), s);
@@ -23,33 +22,33 @@ public:
             strcat_s(mBuf, sizeof(mBuf), "(null passed)");
         return *this;
     }
-    MLog& operator<<(const Allocator::string& s)
+    SStream& operator<<(const Allocator::string& s)
     {
         strcat_s(mBuf, sizeof(mBuf), s.c_str());
         return *this;
     }
-    MLog& operator<<(int i)
+    SStream& operator<<(int i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%d", i);
         strcat_s(mBuf, sizeof(mBuf), buf);
         return *this;
     }
-    MLog& operator<<(unsigned long i)
+    SStream& operator<<(unsigned long i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%u", i);
         strcat_s(mBuf, sizeof(mBuf), buf);
         return *this;
     }
-    MLog& operator<<(unsigned __int64 i)
+    SStream& operator<<(unsigned __int64 i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%llu", i);
         strcat_s(mBuf, sizeof(mBuf), buf);
         return *this;
     }
-    MLog& operator<<(void* p)
+    SStream& operator<<(void* p)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "0x%p", p);
@@ -57,8 +56,8 @@ public:
         return *this;
     }
 
-    MLog& operator<<(unsigned int i) { return operator<<(static_cast<unsigned long>(i)); }
-    MLog& operator<<(HMODULE i) { return operator<<(static_cast<void*>(i)); }
+    SStream& operator<<(unsigned int i) { return operator<<(static_cast<unsigned long>(i)); }
+    SStream& operator<<(HMODULE i) { return operator<<(static_cast<void*>(i)); }
     const char* str() const { return mBuf; }
 private:
     char mBuf[1024];
@@ -69,7 +68,7 @@ private:
 #ifdef PRINT_DEBUG_LOG
     #define Vlog(cond) do { \
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
-        MLog ml; \
+        SStream ml; \
         ml << " [" << param->dwProcessId << "." << param->dwThreadId << "] " << cond << "\n"; \
         param->f_OutputDebugStringA(ml.str()); \
       } while (0)
@@ -424,12 +423,13 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
                         }
                     }
                 }
-                Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (oftName ? lpImage + oftName : "<null>"));
-                ad.rva = rvafunc;
-                ad.va = rvafunc + (DWORD)lpImage;
-                ad.name = (oftName ? lpImage + oftName : "<null>");
-                bool dataApi = false;
-                bool foawrdApi = false;
+                if (oftName)
+                    Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (lpImage + oftName));
+                else
+                    Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: ordinal " << i);
+
+                bool dataExp = false;
+                bool forwardApi = false;
                 // 判断是否为转向函数导出
                 if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
                 {
@@ -451,15 +451,29 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
                     }
                     if (isDataExport)
                         Vlog("dataApi: -");
-                    ad.data_api = !!isDataExport;
-                    ad.forward_api = false;
+                    dataExp = !!isDataExport;
                 }
                 else
                 {
                     // 是转向函数，设定转向信息
                     Vlog("redirectApi: " << lpImage + rvafunc);
-                    ad.forward_api = true;
+                    forwardApi = true;
                 }
+
+                ad.rva = rvafunc;
+                ad.va = rvafunc + (DWORD)lpImage;
+                if (oftName)
+                    ad.name = lpImage + oftName;
+                else
+                {
+                    SStream ml;
+                    ml << i;
+                    ad.name = string("ordinal ") + ml.str();
+                }
+                if (forwardApi)
+                    ad.forwardto = lpImage + rvafunc;
+                ad.data_export = dataExp;
+                ad.forward_api = forwardApi;
                 msgModuleApis.apis.push_back(ad);
             }
         }

@@ -229,10 +229,11 @@ namespace msg
         struct ApiDetail
         {
             Allocator::string name;    // or original number
+            Allocator::string forwardto;
             long long         va;
             long long         rva;
             bool              forward_api;
-            bool              data_api;
+            bool              data_export;
         };
         std::vector<ApiDetail, Allocator::allocator<ApiDetail>> apis;
 
@@ -248,10 +249,11 @@ namespace msg
             for (size_t i = 0; i < apis.size(); ++i)
             {
                 SerialItem(vec, apis[i].name);
+                SerialItem(vec, apis[i].forwardto);
                 SerialItem(vec, apis[i].va);
                 SerialItem(vec, apis[i].rva);
                 SerialItem(vec, apis[i].forward_api);
-                SerialItem(vec, apis[i].data_api);
+                SerialItem(vec, apis[i].data_export);
             }
             CalFinalLength(vec);
             return vec;
@@ -269,10 +271,11 @@ namespace msg
             {
                 ApiDetail& ad = apis[i];
                 idx = ExtractItem(str, idx, ad.name);
+                idx = ExtractItem(str, idx, ad.forwardto);
                 idx = ExtractItem(str, idx, ad.va);
                 idx = ExtractItem(str, idx, ad.rva);
                 idx = ExtractItem(str, idx, ad.forward_api);
-                idx = ExtractItem(str, idx, ad.data_api);
+                idx = ExtractItem(str, idx, ad.data_export);
             }
         }
     };

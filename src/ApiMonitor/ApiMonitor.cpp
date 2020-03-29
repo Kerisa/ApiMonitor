@@ -120,8 +120,12 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         f.module_name = m.module_name;
         for (size_t i = 0; i < m.apis.size(); ++i)
         {
-            printf("  (%05u) name: %s, va: %llx, rva: %llx, dataExp: %s, forward: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-                (m.apis[i].data_api ? "yes" : "no"), (m.apis[i].forward_api ? "yes" : "no"));
+            if (m.apis[i].forward_api)
+                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward-to: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
+                    (m.apis[i].data_export ? "yes" : "no"), m.apis[i].forwardto.c_str());
+            else
+                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward: no\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
+                    (m.apis[i].data_export ? "yes" : "no"));
             PipeDefine::msg::ApiFilter::Api a;
             a.api_name = m.apis[i].name;
             a.filter = true;
