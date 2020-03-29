@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include <tlhelp32.h>
 
 typedef VOID (NTAPI * FN_LdrInitializeThunk)(
@@ -182,38 +184,3 @@ struct PARAM
     FN_SetNamedPipeHandleState  f_SetNamedPipeHandleState;
     FN_GetLastError             f_GetLastError;
 };
-
-namespace PipeDefine
-{
-    const char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
-
-    enum MsgReq
-    {
-        Pipe_Req_Inited,
-        Pipe_Req_FilterModule,
-        Pipe_Req_FilterApi,
-        Pipe_Req_ModuleApiList,
-        Pipe_Req_ApiInvoked,
-    };
-
-    enum MsgAck
-    {
-        Pipe_Ack_Inited,
-        Pipe_Ack_FilterModule,
-        Pipe_Ack_FilterApi,
-        Pipe_Ack_ApiInvoked,
-    };
-
-    struct Message
-    {
-        static constexpr const size_t HeaderLength = sizeof(MsgReq) + sizeof(size_t);
-        union {
-            MsgReq Req;
-            MsgAck Ack;
-        };
-        static_assert(sizeof(MsgReq) == sizeof(MsgAck), "sizeof(MsgReq) == sizeof(MsgAck)");
-
-        size_t ContentSize;
-        char Content[1];
-    };
-}

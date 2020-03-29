@@ -7,6 +7,7 @@
 #include "def.h"
 #include "NamedPipe.h"
 #include "pipe.pb.h"
+#include "pipemessage.h"
 
 typedef struct reloc_line
 {
@@ -98,13 +99,15 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     switch (msg->Req)
     {
     case PipeDefine::Pipe_Req_Inited: {
-        Init m;
-        m.ParseFromArray(msg->Content, msg->ContentSize);
-        m.set_dummy(m.dummy() + 1);
+        PipeDefine::Msg_Init m;
+        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+        m.Unserial(str);
+        m.dummy += 1;
+        str = m.Serial();
         PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
         msg2->Ack = PipeDefine::Pipe_Ack_Inited;
-        msg2->ContentSize = m.ByteSize();
-        m.SerializePartialToArray(msg2->Content, msg2->ContentSize);
+        msg2->ContentSize = str.size();
+        memcpy_s(msg2->Content, 4096, str.data(), str.size());
         *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
         break;
     }
