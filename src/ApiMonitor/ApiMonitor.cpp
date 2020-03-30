@@ -144,7 +144,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         PipeDefine::msg::ApiInvoked m;
         std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
         m.Unserial(str);
-        printf("Api Invoked: %s, %s, tid: %d, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), m.tid, m.times);
+        printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), m.tid, m.call_from, m.times);
         break;
     }
     }

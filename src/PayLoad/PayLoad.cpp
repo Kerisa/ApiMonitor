@@ -252,12 +252,10 @@ public:
 
                     msPipe.mMsgWriteBuffer->pop_front();
                     param->f_LeaveCriticalSection(&msPipe.csWrite);
+                    param->f_Sleep(1);
                 }
             }
-            else
-            {
-                param->f_Sleep(16);
-            }
+            param->f_Sleep(16);
         }
         return 0;
     }
@@ -282,7 +280,7 @@ public:
     struct Entry
     {
         static constexpr size_t ByteCodeLength = 32;
-        typedef void (__stdcall * FN_HookFunction)(uint32_t self_index);
+        typedef void (__stdcall * FN_HookFunction)(uint32_t self_index, LONG_PTR call_from);
         uint32_t                mSelfIndex;
         char*                   mBytesCode;
         string                  mModuleName;
@@ -302,12 +300,12 @@ public:
             mFuncName.clear();
         }
     };
-    static void __stdcall CommonHookFunction(uint32_t self_index)
+    static void __stdcall CommonHookFunction(uint32_t self_index, LONG_PTR call_from)
     {
         Entry* e = msEntries.GetEntry(self_index);
         Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
             << ", func name: " << (e ? e->mFuncName.c_str() : "<idx error>")
-            << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
+            << ", call from: " << (LPVOID)call_from << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
         
         if (e)
         {
@@ -317,7 +315,8 @@ public:
             msgApiInvoke.module_name = e->mModuleName.c_str();
             msgApiInvoke.api_name = e->mFuncName.c_str();
             msgApiInvoke.tid = param->f_GetCurrentThreadId();
-            msgApiInvoke.times = *(int*)e->mParams.data();
+            msgApiInvoke.times = *(long*)e->mParams.data();
+            msgApiInvoke.call_from = call_from;
             auto content = msgApiInvoke.Serial();
             PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ApiInvoked, content);
             PipeDefine::MsgAck msg;
@@ -374,11 +373,12 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
         //
         // push edx
         // push ecx
+        // push dword ptr [esp+8]   ; <--- original return addr as call from addr
         // push entry_index
-        // push continue_offset
+        // push continue_offset     ; <--- new return addr
         // push hook_func
         // ret
-        // pop ecx              ; <--- here continue_offset
+        // pop ecx                  ; <--- here continue_offset
         // pop edx
         // push original_func
         // ret
@@ -386,19 +386,23 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
 
         e->mBytesCode[0] = '\x52';
         e->mBytesCode[1] = '\x51';
-        e->mBytesCode[2] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[3] = (ULONG_PTR)e->mSelfIndex;
-        e->mBytesCode[7] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[8] = (ULONG_PTR)&e->mBytesCode[18];
-        e->mBytesCode[12] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[13] = (ULONG_PTR)e->mHookFunction;
-        e->mBytesCode[17] = '\xc3';
-        e->mBytesCode[18] = '\x59';
-        e->mBytesCode[19] = '\x5a';
-        e->mBytesCode[20] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[21] = (ULONG_PTR)oldEntry;
-        e->mBytesCode[25] = '\xc3';
-        e->mBytesCode[26] = '\xcc';
+        e->mBytesCode[2] = '\xff';
+        e->mBytesCode[3] = '\x74';
+        e->mBytesCode[4] = '\x24';
+        e->mBytesCode[5] = '\x08';
+        e->mBytesCode[6] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[7] = (ULONG_PTR)e->mSelfIndex;
+        e->mBytesCode[11] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[12] = (ULONG_PTR)&e->mBytesCode[22];
+        e->mBytesCode[16] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[17] = (ULONG_PTR)e->mHookFunction;
+        e->mBytesCode[21] = '\xc3';
+        e->mBytesCode[22] = '\x59';
+        e->mBytesCode[23] = '\x5a';
+        e->mBytesCode[24] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[25] = (ULONG_PTR)oldEntry;
+        e->mBytesCode[29] = '\xc3';
+        e->mBytesCode[30] = '\xcc';
     }
     else
     {

@@ -288,6 +288,7 @@ namespace msg
         Allocator::string module_name;
         Allocator::string api_name;
         unsigned long     tid;
+        long long         call_from;
         long              times;
         long              action;
 
@@ -298,6 +299,7 @@ namespace msg
             SerialItem(vec, module_name);
             SerialItem(vec, api_name);
             SerialItem(vec, tid);
+            SerialItem(vec, call_from);
             SerialItem(vec, times);
             SerialItem(vec, action);
             CalFinalLength(vec);
@@ -309,6 +311,7 @@ namespace msg
             idx = ExtractItem(str, idx, module_name);
             idx = ExtractItem(str, idx, api_name);
             idx = ExtractItem(str, idx, tid);
+            idx = ExtractItem(str, idx, call_from);
             idx = ExtractItem(str, idx, times);
             idx = ExtractItem(str, idx, action);
         }
