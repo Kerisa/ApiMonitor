@@ -1,5 +1,7 @@
 ﻿
 #include <array>
+#include <list>
+#include <map>
 #include <vector>
 #include <Windows.h>
 #include "def.h"
@@ -68,7 +70,7 @@ private:
     #define Vlog(cond) do { \
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
         SStream ml; \
-        ml << " [" << param->dwProcessId << "." << param->dwThreadId << "] " << cond << "\n"; \
+        ml << " [" << param->dwProcessId << "." << param->f_GetCurrentThreadId() << "] " << cond << "\n"; \
         param->f_OutputDebugStringA(ml.str()); \
       } while (0)
 #else
@@ -113,6 +115,14 @@ public:
             return false;
         }
 
+        mMsgReadBuffer = (ThreadMsgMap*)Allocator::Malloc(sizeof(ThreadMsgMap));
+        new (mMsgReadBuffer) ThreadMsgMap();
+        mMsgWriteBuffer = (ThreadMsgList*)Allocator::Malloc(sizeof(ThreadMsgList));
+        new (mMsgWriteBuffer) ThreadMsgList();
+        param->f_InitializeCriticalSection(&csRead);
+        param->f_InitializeCriticalSection(&csWrite);
+        mWriteThreadHandle = param->f_CreateThread(0, 0, WriteThread, 0, 0, 0);
+        mReadThreadHandle = param->f_CreateThread(0, 0, ReadThread, 0, 0, 0);
         Vlog("[PipeLine::ConnectServer] connected. " << mPipe);
         return mPipe != INVALID_HANDLE_VALUE;
     }
@@ -130,46 +140,138 @@ public:
         std::vector<char, Allocator::allocator<char>> m(PipeDefine::Message::HeaderLength);
         PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
         ptr->Req = type;
+        ptr->tid = param->f_GetCurrentThreadId();
         ptr->ContentSize = content.size();
         m.insert(m.end(), content.begin(), content.end());
-        Vlog("[PipeLine::Send] msg type: " << type << ", size: " << m.size());
-        BOOL ret = param->f_WriteFile(mPipe, m.data(), m.size(), &dummy, NULL);
-        if (!ret)
-            Vlog("[PipeLine::Send] result: " << ret << ", err: " << param->f_GetLastError());
-        return !!ret;
+        Vlog("[PipeLine::Send] enqueue msg type: " << type << ", size: " << m.size());
+
+        param->f_EnterCriticalSection(&csWrite);
+        mMsgWriteBuffer->push_back(m);
+        param->f_LeaveCriticalSection(&csWrite);
+        return true;
     }
 
-    bool Recv(PipeDefine::MsgAck & msg, std::vector<char, Allocator::allocator<char>> & content)
+    bool Recv(PipeDefine::MsgAck & type, std::vector<char, Allocator::allocator<char>> & content)
     {
         if (mPipe == INVALID_HANDLE_VALUE)
         {
             Vlog("[PipeLine::Recv] pipe not ready.");
             return false;
         }
+        Vlog("[PipeLine::Recv] try to receive a msg...");
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-        BOOL ret = 0;
-        DWORD dummy = 0;
-        DWORD dataToRead = PipeDefine::Message::HeaderLength;
-        std::vector<char, Allocator::allocator<char>> m(1024*1024);
-        ret = param->f_ReadFile(mPipe, m.data(), m.size(), &dummy, NULL);
-        if (!ret)
+        const DWORD tid = param->f_GetCurrentThreadId();
+        bool wait = true;
+        while (wait)
         {
-            Vlog("[PipeLine::Recv] pipe read header failed, err: " << param->f_GetLastError());
-            return false;
+            param->f_EnterCriticalSection(&csRead);
+            ThreadMsgList& msgL = (*mMsgReadBuffer)[tid];
+            if (!msgL.empty())
+            {
+                MsgVec& m = msgL.front();
+                PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
+                type = ptr->Ack;
+                content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
+                msgL.pop_front();
+                wait = false;
+            }
+            param->f_LeaveCriticalSection(&csRead);
+            param->f_Sleep(1);
         }
-        PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
-        if (ptr->ContentSize >= m.size() - PipeDefine::Message::HeaderLength)
-        {
-            Vlog("[PipeLine::Recv] message may corrupted, type: " << ptr->Ack << ", size: " << ptr->ContentSize);
-            return false;
-        }
-        msg = ptr->Ack;
-        content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
-        Vlog("[PipeLine::Recv] msg type: " << msg << ", size: " << content.size());
+        Vlog("[PipeLine::Recv] msg type: " << type << ", size: " << content.size());
         return true;
     }
 
+    static DWORD WINAPI ReadThread(LPVOID pv)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        std::vector<char, Allocator::allocator<char>> tmpBuffer(1024 * 1024);
+
+        while (true)
+        {
+            DWORD bytesRead = 0;
+            BOOL ret = param->f_ReadFile(msPipe.mPipe, tmpBuffer.data(), tmpBuffer.size(), &bytesRead, NULL);
+            if (!ret)
+            {
+                Vlog("[PipeLine::ReadThread] pipe read header failed, err: " << param->f_GetLastError());
+                break;
+            }
+            if (bytesRead == 0)
+                continue;
+
+            PipeDefine::Message* ptr = (PipeDefine::Message*)tmpBuffer.data();
+            if (bytesRead < PipeDefine::Message::HeaderLength)
+            {
+                Vlog("[PipeLine::ReadThread] message too short, size: " << bytesRead << ", err: " << param->f_GetLastError());
+                continue;
+            }
+            if ((ptr->ContentSize + PipeDefine::Message::HeaderLength != bytesRead) || (bytesRead >= tmpBuffer.size()))
+            {
+                Vlog("[PipeLine::ReadThread] message may corrupted, bytesRead: " << bytesRead << "type: " << ptr->Ack << ", size: " << ptr->ContentSize);
+                continue;
+            }
+
+            param->f_EnterCriticalSection(&msPipe.csRead);
+            ThreadMsgList& msgV = (*msPipe.mMsgReadBuffer)[ptr->tid];
+            msgV.push_back(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
+            param->f_LeaveCriticalSection(&msPipe.csRead);
+        }
+    }
+
+    static DWORD WINAPI WriteThread(LPVOID pv)
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+        while (true)
+        {
+            if (msPipe.mPipe == INVALID_HANDLE_VALUE)
+            {
+                Vlog("[PipeLine::WriteThread] pipe not ready.");
+                return 1;
+            }
+
+            if (!msPipe.mMsgWriteBuffer->empty())
+            {
+                while (!msPipe.mMsgWriteBuffer->empty())
+                {
+                    param->f_EnterCriticalSection(&msPipe.csWrite);
+                    MsgVec& v = msPipe.mMsgWriteBuffer->front();
+                    if (!v.empty())
+                    {
+                        DWORD dummy = 0;
+                        BOOL ret = param->f_WriteFile(msPipe.mPipe, v.data(), v.size(), &dummy, NULL);
+                        if (!ret)
+                            Vlog("[PipeLine::WriteThread] result: " << ret << ", err: " << param->f_GetLastError());
+
+                        Vlog("[PipeLine::WriteThread] msg write, size: " << v.size());
+                    }
+                    else
+                    {
+                        Vlog("[PipeLine::WriteThread] got an empty msg");
+                    }
+
+                    msPipe.mMsgWriteBuffer->pop_front();
+                    param->f_LeaveCriticalSection(&msPipe.csWrite);
+                }
+            }
+            else
+            {
+                param->f_Sleep(16);
+            }
+        }
+        return 0;
+    }
+
+    typedef std::vector<char, Allocator::allocator<char>> MsgVec;
+    typedef std::list<MsgVec, Allocator::allocator<MsgVec>> ThreadMsgList;
+    typedef std::map<DWORD, ThreadMsgList, std::less<DWORD>, Allocator::allocator<std::pair<const DWORD, ThreadMsgList>>> ThreadMsgMap;
+    ThreadMsgMap* mMsgReadBuffer{ nullptr };
+    ThreadMsgList * mMsgWriteBuffer{ nullptr };
+    CRITICAL_SECTION csRead;
+    CRITICAL_SECTION csWrite;
     HANDLE mPipe;
+    HANDLE mReadThreadHandle;
+    HANDLE mWriteThreadHandle;
 };
 PipeLine PipeLine::msPipe;
 
@@ -220,7 +322,7 @@ public:
             PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ApiInvoked, content);
             PipeDefine::MsgAck msg;
             content.clear();
-            PipeLine::msPipe.Recv(msg, content);
+            //PipeLine::msPipe.Recv(msg, content);
         }
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
@@ -622,6 +724,10 @@ void GetApis()
     param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
     param->f_GetCurrentThreadId = (FN_GetCurrentThreadId)param->f_GetProcAddress((HMODULE)param->kernel32, "GetCurrentThreadId");
+    param->f_InitializeCriticalSection = (FN_InitializeCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "InitializeCriticalSection");
+    param->f_EnterCriticalSection = (FN_EnterCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "EnterCriticalSection");
+    param->f_LeaveCriticalSection = (FN_LeaveCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "LeaveCriticalSection");
+    param->f_Sleep = (FN_Sleep)param->f_GetProcAddress((HMODULE)param->kernel32, "Sleep");
 }
 
 void BuildPipe()

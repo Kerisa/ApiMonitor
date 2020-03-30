@@ -26,13 +26,14 @@ namespace PipeDefine
 
     struct Message
     {
-        static constexpr const size_t HeaderLength = sizeof(MsgReq) + sizeof(size_t);
+        static constexpr const size_t HeaderLength = sizeof(MsgReq) + sizeof(size_t) + sizeof(DWORD);
         union {
             MsgReq Req;
             MsgAck Ack;
         };
         static_assert(sizeof(MsgReq) == sizeof(MsgAck), "sizeof(MsgReq) == sizeof(MsgAck)");
 
+        DWORD tid;
         size_t ContentSize;
         char Content[1];
     };

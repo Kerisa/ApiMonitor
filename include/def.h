@@ -141,6 +141,17 @@ typedef DWORD (WINAPI * FN_GetLastError)();
 
 typedef DWORD (WINAPI * FN_GetCurrentThreadId)();
 
+typedef void (WINAPI * FN_InitializeCriticalSection)(
+    LPCRITICAL_SECTION lpCriticalSection);
+
+typedef void (WINAPI * FN_EnterCriticalSection)(
+    LPCRITICAL_SECTION lpCriticalSection);
+
+typedef void (WINAPI * FN_LeaveCriticalSection)(
+    LPCRITICAL_SECTION lpCriticalSection);
+
+typedef void (WINAPI * FN_Sleep)(DWORD dwMilliseconds);
+
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x10000000;
@@ -155,35 +166,39 @@ struct PARAM
     HANDLE ExecuteHeapHandle;
 
     // ntdll
-    FN_LdrInitializeThunk       f_LdrInitializeThunk;
-    FN_LdrLoadDll               f_LdrLoadDll;
+    FN_LdrInitializeThunk        f_LdrInitializeThunk;
+    FN_LdrLoadDll                f_LdrLoadDll;
 
     // kernelbase
-    FN_GetModuleHandleA         f_GetModuleHandleA;
-    FN_GetProcAddress           f_GetProcAddress;
-    FN_OpenThread               f_OpenThread;
-    FN_SuspendThread            f_SuspendThread;
-    FN_SetThreadContext         f_SetThreadContext;
-    FN_ResumeThread             f_ResumeThread;
-    FN_CloseHandle              f_CloseHandle;
-    FN_CreateThread             f_CreateThread;
-    FN_OutputDebugStringA       f_OutputDebugStringA;
-    FN_VirtualAlloc             f_VirtualAlloc;
-    FN_VirtualProtect           f_VirtualProtect;
+    FN_GetModuleHandleA          f_GetModuleHandleA;
+    FN_GetProcAddress            f_GetProcAddress;
+    FN_OpenThread                f_OpenThread;
+    FN_SuspendThread             f_SuspendThread;
+    FN_SetThreadContext          f_SetThreadContext;
+    FN_ResumeThread              f_ResumeThread;
+    FN_CloseHandle               f_CloseHandle;
+    FN_CreateThread              f_CreateThread;
+    FN_OutputDebugStringA        f_OutputDebugStringA;
+    FN_VirtualAlloc              f_VirtualAlloc;
+    FN_VirtualProtect            f_VirtualProtect;
 
     // kernel32
-    FN_CreateToolhelp32Snapshot f_CreateToolhelp32Snapshot;
-    FN_Module32First            f_Module32First;
-    FN_Module32Next             f_Module32Next;
-    FN_HeapCreate               f_HeapCreate;
-    FN_HeapAlloc                f_HeapAlloc;
-    FN_HeapFree                 f_HeapFree;
-    FN_GetProcessHeap           f_GetProcessHeap;
-    FN_CreateFileA              f_CreateFileA;
-    FN_ReadFile                 f_ReadFile;
-    FN_WriteFile                f_WriteFile;
-    FN_WaitNamedPipeA           f_WaitNamedPipeA;
-    FN_SetNamedPipeHandleState  f_SetNamedPipeHandleState;
-    FN_GetLastError             f_GetLastError;
-    FN_GetCurrentThreadId       f_GetCurrentThreadId;
+    FN_CreateToolhelp32Snapshot  f_CreateToolhelp32Snapshot;
+    FN_Module32First             f_Module32First;
+    FN_Module32Next              f_Module32Next;
+    FN_HeapCreate                f_HeapCreate;
+    FN_HeapAlloc                 f_HeapAlloc;
+    FN_HeapFree                  f_HeapFree;
+    FN_GetProcessHeap            f_GetProcessHeap;
+    FN_CreateFileA               f_CreateFileA;
+    FN_ReadFile                  f_ReadFile;
+    FN_WriteFile                 f_WriteFile;
+    FN_WaitNamedPipeA            f_WaitNamedPipeA;
+    FN_SetNamedPipeHandleState   f_SetNamedPipeHandleState;
+    FN_GetLastError              f_GetLastError;
+    FN_GetCurrentThreadId        f_GetCurrentThreadId;
+    FN_InitializeCriticalSection f_InitializeCriticalSection;
+    FN_EnterCriticalSection      f_EnterCriticalSection;
+    FN_LeaveCriticalSection      f_LeaveCriticalSection;
+    FN_Sleep                     f_Sleep;
 };

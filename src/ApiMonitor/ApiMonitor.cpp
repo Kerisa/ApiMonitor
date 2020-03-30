@@ -105,6 +105,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         str = m.Serial();
         PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
         msg2->Ack = PipeDefine::Pipe_Ack_Inited;
+        msg2->tid = msg->tid;
         msg2->ContentSize = str.size();
         memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
         *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
@@ -133,6 +134,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         str = f.Serial();
         PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
         msg2->Ack = PipeDefine::Pipe_Ack_FilterApi;
+        msg2->tid = msg->tid;
         msg2->ContentSize = str.size();
         memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
         *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
