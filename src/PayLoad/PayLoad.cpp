@@ -216,6 +216,7 @@ public:
             msgV.push_back(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
             param->f_LeaveCriticalSection(&msPipe.csRead);
         }
+        return 0;
     }
 
     static DWORD WINAPI WriteThread(LPVOID pv)
@@ -686,7 +687,7 @@ ULONG_PTR MiniGetFunctionAddress(ULONG_PTR phModule, const char* pProcName)
 void GetModules()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    param->f_LdrLoadDll = (FN_LdrLoadDll)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrLoadDll");
+    //param->f_LdrLoadDll = (FN_LdrLoadDll)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrLoadDll");
     param->f_LdrInitializeThunk = (FN_LdrInitializeThunk)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, "LdrInitializeThunk");
     wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
     UNICODE_STRING name = { 0 };
@@ -702,6 +703,9 @@ void GetModules()
 void GetApis()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    if (!param->f_GetProcAddress)
+        param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)param->kernelBase, "GetProcAddress");
+
     param->f_GetModuleHandleA = (FN_GetModuleHandleA)param->f_GetProcAddress((HMODULE)param->kernelBase, "GetModuleHandleA");
     param->f_OpenThread = (FN_OpenThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "OpenThread");
     param->f_SuspendThread = (FN_SuspendThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "SuspendThread");
@@ -788,6 +792,49 @@ void ContinueExe()
     while (1) {}
 }
 
+void HookLdrLoadDll()
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+    GetModules();
+}
+
+NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    NTSTATUS ret = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
+
+    if (!param->kernelBase)
+    {
+        wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
+        UNICODE_STRING name = { 0 };
+        name.Length = static_cast<USHORT>(wcslen(buffer) * sizeof(wchar_t));
+        name.Buffer = buffer;
+        name.MaximumLength = static_cast<USHORT>(sizeof(buffer));
+        HANDLE hKernel = 0;
+        NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
+        param->kernelBase = (LPVOID)hKernel;
+    }
+    if (!param->kernel32)
+    {
+        wchar_t buffer[MAX_PATH] = L"kernel32.dll";
+        UNICODE_STRING name = { 0 };
+        name.Length = static_cast<USHORT>(wcslen(buffer) * sizeof(wchar_t));
+        name.Buffer = buffer;
+        name.MaximumLength = static_cast<USHORT>(sizeof(buffer));
+        HANDLE hKernel = 0;
+        NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
+        param->kernel32 = (LPVOID)hKernel;
+    }
+    if (!param->bInited && param->kernel32 && param->kernelBase)
+    {
+        GetApis();
+        Allocator::InitAllocator();
+        param->bInited = true;
+    }
+    return ret;
+}
+
 void Entry()
 {
     GetModules();
@@ -803,6 +850,7 @@ void Entry()
 void Alias(const void* var) {
     if (0) {
         Entry();
+        HookLdrLoadDll();
     }
 }
 #pragma optimize("", on)

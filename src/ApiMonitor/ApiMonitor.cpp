@@ -8,6 +8,8 @@
 #include "NamedPipe.h"
 #include "pipemessage.h"
 
+using namespace std;
+
 typedef struct reloc_line
 {
     WORD m_addr : 12;
@@ -80,6 +82,45 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     SIZE_T W = 0;
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
     PVOID oep = (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+
+
+    HMODULE ntDllBase = GetModuleHandleA("ntdll.dll");
+    auto pLdrLoadDll = (FN_LdrLoadDll)GetProcAddress(ntDllBase, "LdrLoadDll");
+    vector<unsigned char> remoteMemory(0x200);
+    ReadProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100), remoteMemory.data(), remoteMemory.size(), &R);
+    bool found = false;
+    size_t position = 0;
+    for (size_t i = 0x100; i > 0 && !found; --i)
+    {
+        if (remoteMemory[i] == 0xcc)
+        {
+            int k = 0;
+            for (; k < 7; ++k)
+                if (remoteMemory[i - k] != 0xcc)
+                    break;
+            if (k == 7)
+            {
+                found = true;
+                position = i - 6;
+            }
+        }
+    }
+    if (found)
+    {
+        char jmp[2];
+        jmp[0] = '\xeb';
+        jmp[1] = position - (0x100 + 0x2);
+        WriteProcessMemory(hProcess, (LPVOID)pLdrLoadDll, jmp, sizeof(jmp), &R);
+
+        auto hook = GetProcAddress(hDll2, "HookLdrLoadDllPad");
+        char jmp2[6];
+        jmp2[0] = '\x68';
+        *(PDWORD)&jmp2[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+        jmp2[5] = '\xc3';
+        WriteProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100 + position), jmp2, sizeof(jmp2), &R);
+    }
+
+
     FreeLibrary(hDll2);
     return oep;
 }
@@ -166,11 +207,16 @@ int main(int argc, char** argv)
 
     SIZE_T R = 0;
     PARAM param;
+    memset(&param, 0, sizeof(PARAM));
     param.ntdllBase = (LPVOID)GetModuleHandleA("ntdll.dll");
+    param.f_LdrLoadDll = (FN_LdrLoadDll)((ULONG_PTR)GetProcAddress((HMODULE)param.ntdllBase, "LdrLoadDll") + 2);
     param.dwProcessId = pi.dwProcessId;
     param.dwThreadId = pi.dwThreadId;
     param.ctx.ContextFlags = CONTEXT_ALL;
     GetThreadContext(pi.hThread, &param.ctx);
+
+
+
     WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;
     copy.Eax = (DWORD)oep;

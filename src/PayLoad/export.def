@@ -1,2 +1,3 @@
 EXPORTS
 	Entry
+	HookLdrLoadDllPad

@@ -165,6 +165,8 @@ struct PARAM
     HANDLE NormalHeapHandle;
     HANDLE ExecuteHeapHandle;
 
+    bool  bInited;
+
     // ntdll
     FN_LdrInitializeThunk        f_LdrInitializeThunk;
     FN_LdrLoadDll                f_LdrLoadDll;
