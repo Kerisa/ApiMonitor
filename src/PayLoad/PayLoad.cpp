@@ -80,7 +80,20 @@ private:
 class PipeLine
 {
 public:
-    static PipeLine msPipe;
+    static PipeLine* msPipe;
+
+    PipeLine()
+    {
+        mMsgReadBuffer = (ThreadMsgMap*)Allocator::Malloc(sizeof(ThreadMsgMap));
+        new (mMsgReadBuffer) ThreadMsgMap();
+        mMsgWriteBuffer = (ThreadMsgList*)Allocator::Malloc(sizeof(ThreadMsgList));
+        new (mMsgWriteBuffer) ThreadMsgList();
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_InitializeCriticalSection(&csRead);
+        param->f_InitializeCriticalSection(&csWrite);
+        mWriteThreadHandle = NULL;
+        mReadThreadHandle = NULL;
+    }
 
     bool ConnectServer()
     {
@@ -115,16 +128,17 @@ public:
             return false;
         }
 
-        mMsgReadBuffer = (ThreadMsgMap*)Allocator::Malloc(sizeof(ThreadMsgMap));
-        new (mMsgReadBuffer) ThreadMsgMap();
-        mMsgWriteBuffer = (ThreadMsgList*)Allocator::Malloc(sizeof(ThreadMsgList));
-        new (mMsgWriteBuffer) ThreadMsgList();
-        param->f_InitializeCriticalSection(&csRead);
-        param->f_InitializeCriticalSection(&csWrite);
-        mWriteThreadHandle = param->f_CreateThread(0, 0, WriteThread, 0, 0, 0);
-        mReadThreadHandle = param->f_CreateThread(0, 0, ReadThread, 0, 0, 0);
         Vlog("[PipeLine::ConnectServer] connected. " << mPipe);
         return mPipe != INVALID_HANDLE_VALUE;
+    }
+
+    bool CreateWorkThread()
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        mWriteThreadHandle = param->f_CreateThread(0, 0, WriteThread, 0, 0, 0);
+        mReadThreadHandle = param->f_CreateThread(0, 0, ReadThread, 0, 0, 0);
+        Vlog("[PipeLine::CreateWorkThread] read-thread: " << mReadThreadHandle << ", write-thread: " << mWriteThreadHandle);
+        return true;
     }
 
     bool Send(PipeDefine::MsgReq type, const std::vector<char, Allocator::allocator<char>> & content)
@@ -148,6 +162,11 @@ public:
         param->f_EnterCriticalSection(&csWrite);
         mMsgWriteBuffer->push_back(m);
         param->f_LeaveCriticalSection(&csWrite);
+
+        if (mWriteThreadHandle == NULL)
+        {
+            WriteThread((LPVOID)1);
+        }
         return true;
     }
 
@@ -157,6 +176,10 @@ public:
         {
             Vlog("[PipeLine::Recv] pipe not ready.");
             return false;
+        }
+        if (mReadThreadHandle == NULL)
+        {
+            ReadThread((LPVOID)1);
         }
         Vlog("[PipeLine::Recv] try to receive a msg...");
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -186,18 +209,28 @@ public:
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
         std::vector<char, Allocator::allocator<char>> tmpBuffer(1024 * 1024);
-
-        while (true)
+        bool runOnce = ((int)pv == 1);
+        Vlog("[PipeLine::ReadThread] enter, run once: " << runOnce);
+        do
         {
             DWORD bytesRead = 0;
-            BOOL ret = param->f_ReadFile(msPipe.mPipe, tmpBuffer.data(), tmpBuffer.size(), &bytesRead, NULL);
+RETRY_READ:
+            BOOL ret = param->f_ReadFile(msPipe->mPipe, tmpBuffer.data(), tmpBuffer.size(), &bytesRead, NULL);
             if (!ret)
             {
                 Vlog("[PipeLine::ReadThread] pipe read header failed, err: " << param->f_GetLastError());
                 break;
             }
             if (bytesRead == 0)
-                continue;
+            {
+                if (!runOnce)
+                    continue;
+                else
+                {
+                    Vlog("[PipeLine::ReadThread] 0 bytes read, err: " << param->f_GetLastError());
+                    goto RETRY_READ;
+                }
+            }
 
             PipeDefine::Message* ptr = (PipeDefine::Message*)tmpBuffer.data();
             if (bytesRead < PipeDefine::Message::HeaderLength)
@@ -211,53 +244,54 @@ public:
                 continue;
             }
 
-            param->f_EnterCriticalSection(&msPipe.csRead);
-            ThreadMsgList& msgV = (*msPipe.mMsgReadBuffer)[ptr->tid];
+            param->f_EnterCriticalSection(&msPipe->csRead);
+            ThreadMsgList& msgV = (*msPipe->mMsgReadBuffer)[ptr->tid];
             msgV.push_back(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
-            param->f_LeaveCriticalSection(&msPipe.csRead);
-        }
+            param->f_LeaveCriticalSection(&msPipe->csRead);
+        } while (!runOnce);
+        Vlog("[PipeLine::ReadThread] exit.");
         return 0;
     }
 
     static DWORD WINAPI WriteThread(LPVOID pv)
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-
-        while (true)
+        bool runOnce = ((int)pv == 1);
+        Vlog("[PipeLine::WriteThread] enter, run once: " << runOnce);
+        do
         {
-            if (msPipe.mPipe == INVALID_HANDLE_VALUE)
+            if (msPipe->mPipe == INVALID_HANDLE_VALUE)
             {
                 Vlog("[PipeLine::WriteThread] pipe not ready.");
                 return 1;
             }
 
-            if (!msPipe.mMsgWriteBuffer->empty())
+            if (!msPipe->mMsgWriteBuffer->empty())
             {
-                while (!msPipe.mMsgWriteBuffer->empty())
+                while (!msPipe->mMsgWriteBuffer->empty())
                 {
-                    param->f_EnterCriticalSection(&msPipe.csWrite);
-                    MsgVec& v = msPipe.mMsgWriteBuffer->front();
+                    param->f_EnterCriticalSection(&msPipe->csWrite);
+                    MsgVec& v = msPipe->mMsgWriteBuffer->front();
                     if (!v.empty())
                     {
                         DWORD dummy = 0;
-                        BOOL ret = param->f_WriteFile(msPipe.mPipe, v.data(), v.size(), &dummy, NULL);
+                        BOOL ret = param->f_WriteFile(msPipe->mPipe, v.data(), v.size(), &dummy, NULL);
                         if (!ret)
                             Vlog("[PipeLine::WriteThread] result: " << ret << ", err: " << param->f_GetLastError());
-
-                        Vlog("[PipeLine::WriteThread] msg write, size: " << v.size());
                     }
                     else
                     {
                         Vlog("[PipeLine::WriteThread] got an empty msg");
                     }
 
-                    msPipe.mMsgWriteBuffer->pop_front();
-                    param->f_LeaveCriticalSection(&msPipe.csWrite);
+                    msPipe->mMsgWriteBuffer->pop_front();
+                    param->f_LeaveCriticalSection(&msPipe->csWrite);
                     param->f_Sleep(1);
                 }
             }
             param->f_Sleep(16);
-        }
+        } while (!runOnce);
+        Vlog("[PipeLine::WriteThread] exit.");
         return 0;
     }
 
@@ -272,7 +306,7 @@ public:
     HANDLE mReadThreadHandle;
     HANDLE mWriteThreadHandle;
 };
-PipeLine PipeLine::msPipe;
+PipeLine* PipeLine::msPipe;
 
 class HookEntries
 {
@@ -319,7 +353,7 @@ public:
             msgApiInvoke.times = *(long*)e->mParams.data();
             msgApiInvoke.call_from = call_from;
             auto content = msgApiInvoke.Serial();
-            PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ApiInvoked, content);
+            PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ApiInvoked, content);
             PipeDefine::MsgAck msg;
             content.clear();
             //PipeLine::msPipe.Recv(msg, content);
@@ -486,11 +520,20 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
             sprintf_s(tmpFuncNameBuffer, sizeof(tmpFuncNameBuffer), "<ordinal %d>", i + imED->Base);
             funcName = tmpFuncNameBuffer;
         }
-        ULONG_PTR newRva = AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
-        if (newRva)
-            newFunc[i] = newRva;
+
+        if (strcmp(funcName, "LdrLoadDll"))
+        {
+            ULONG_PTR newRva = AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
+            if (newRva)
+                newFunc[i] = newRva;
+            else
+                newFunc[i] = oldFunc[i];
+        }
         else
+        {
+            Vlog("[HookModuleExportTable] skip LdrLoadDll");
             newFunc[i] = oldFunc[i];
+        }
     }
 
     DWORD oldProtect2 = 0;
@@ -630,10 +673,10 @@ void HookLoadedModules()
         CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, msgModuleApis);
 
         auto content = msgModuleApis.Serial();
-        PipeLine::msPipe.Send(PipeDefine::Pipe_Req_ModuleApiList, content);
+        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
         PipeDefine::MsgAck recv_type;
         content.clear();
-        PipeLine::msPipe.Recv(recv_type, content);
+        PipeLine::msPipe->Recv(recv_type, content);
         PipeDefine::msg::ApiFilter filter;
         filter.Unserial(content);
         Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
@@ -740,8 +783,11 @@ void GetApis()
 
 void BuildPipe()
 {
-    Vlog("[BuildPipe]");
-    PipeLine::msPipe.ConnectServer();
+    Vlog("[BuildPipe] enter.");
+    PipeLine::msPipe = (PipeLine*)Allocator::Malloc(sizeof(PipeLine));
+    new (PipeLine::msPipe) PipeLine();
+    PipeLine::msPipe->ConnectServer();
+    Vlog("[BuildPipe] exit.");
 }
 
 void DebugMessage()
@@ -763,10 +809,10 @@ void DebugMessage()
     PipeDefine::msg::Init msgInit;
     msgInit.dummy = 0xaa55ccdd;
     auto content = msgInit.Serial();
-    PipeLine::msPipe.Send(PipeDefine::Pipe_Req_Inited, content);
+    PipeLine::msPipe->Send(PipeDefine::Pipe_Req_Inited, content);
     PipeDefine::MsgAck recv_type;
     content.clear();
-    PipeLine::msPipe.Recv(recv_type, content);
+    PipeLine::msPipe->Recv(recv_type, content);
     msgInit.Unserial(content);
     Vlog("[DebugMessage] dummy: " << (LPVOID)msgInit.dummy);
 }
@@ -790,13 +836,6 @@ void ContinueExe()
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     param->f_CreateThread(0, 0, Recover, 0, 0, 0);
     while (1) {}
-}
-
-void HookLdrLoadDll()
-{
-    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-
-    GetModules();
 }
 
 NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
@@ -830,19 +869,52 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
     {
         GetApis();
         Allocator::InitAllocator();
+        BuildPipe();
         param->bInited = true;
+
+        // for ntdll
+        PipeDefine::msg::ModuleApis msgModuleApis;
+        CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
+
+        auto content = msgModuleApis.Serial();
+        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
+        PipeDefine::MsgAck recv_type;
+        content.clear();
+        PipeLine::msPipe->Recv(recv_type, content);
+        PipeDefine::msg::ApiFilter filter;
+        filter.Unserial(content);
+        Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+
+        HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
+
+    }
+
+    // for this new loaded dll
+    if (ret == 0)
+    {
+        string moduleName(ModuleFileName->Buffer, ModuleFileName->Buffer + ModuleFileName->Length);
+        Vlog("[HookLdrLoadDllPad] dll: " << moduleName.c_str() << ", base: " << *ModuleHandle);
+        PipeDefine::msg::ModuleApis msgModuleApis;
+        CollectModuleInfo((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
+
+        auto content = msgModuleApis.Serial();
+        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
+        PipeDefine::MsgAck recv_type;
+        content.clear();
+        PipeLine::msPipe->Recv(recv_type, content);
+        PipeDefine::msg::ApiFilter filter;
+        filter.Unserial(content);
+        Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+
+        HookModuleExportTable((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str());
     }
     return ret;
 }
 
 void Entry()
 {
-    GetModules();
-    GetApis();
-    Allocator::InitAllocator();
-    BuildPipe();
+    PipeLine::msPipe->CreateWorkThread();
     DebugMessage();
-    HookLoadedModules();
     ContinueExe();
 }
 
@@ -850,7 +922,6 @@ void Entry()
 void Alias(const void* var) {
     if (0) {
         Entry();
-        HookLdrLoadDll();
     }
 }
 #pragma optimize("", on)
