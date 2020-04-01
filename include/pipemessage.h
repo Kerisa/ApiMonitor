@@ -29,7 +29,7 @@ namespace PipeDefine
     {
         static constexpr const size_t HeaderLength = sizeof(PipeMsg) + sizeof(size_t) + sizeof(DWORD);
         PipeMsg     type;
-        DWORD       tid;
+        DWORD       tid;            // tid 填入线程 id 则由指定线程接收处理，填入 -1 则由管道接收线程直接处理
         size_t      ContentSize;
         char        Content[1];
     };
@@ -138,7 +138,7 @@ namespace msg
 
     struct Init
     {
-        unsigned long dummy;
+        unsigned long dummy{ 0 };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -184,7 +184,7 @@ namespace msg
         struct Api
         {
             Allocator::string api_name;
-            bool              filter;
+            bool              filter{ false };
         };
         std::vector<Api, Allocator::allocator<Api>> apis;
 
@@ -223,16 +223,16 @@ namespace msg
     {
         Allocator::string module_name;
         Allocator::string module_path;
-        long long         module_base;
+        long long         module_base{ false };
 
         struct ApiDetail
         {
             Allocator::string name;    // or original number
             Allocator::string forwardto;
-            long long         va;
-            long long         rva;
-            bool              forward_api;
-            bool              data_export;
+            long long         va{ 0 };
+            long long         rva{ 0 };
+            bool              forward_api{ false };
+            bool              data_export{ false };
         };
         std::vector<ApiDetail, Allocator::allocator<ApiDetail>> apis;
 
@@ -283,10 +283,9 @@ namespace msg
     {
         Allocator::string module_name;
         Allocator::string api_name;
-        unsigned long     tid;
-        long long         call_from;
-        long              times;
-        long              action;
+        long long         call_from{ 0 };
+        long              times{ 0 };
+        long              action{ 0 };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -294,7 +293,6 @@ namespace msg
             SerialInit(vec);
             SerialItem(vec, module_name);
             SerialItem(vec, api_name);
-            SerialItem(vec, tid);
             SerialItem(vec, call_from);
             SerialItem(vec, times);
             SerialItem(vec, action);
@@ -306,10 +304,43 @@ namespace msg
             size_t idx = GetFirstItemIndex(str);
             idx = ExtractItem(str, idx, module_name);
             idx = ExtractItem(str, idx, api_name);
-            idx = ExtractItem(str, idx, tid);
             idx = ExtractItem(str, idx, call_from);
             idx = ExtractItem(str, idx, times);
             idx = ExtractItem(str, idx, action);
+        }
+    };
+
+    struct SetBreakCondition
+    {
+        long long func_addr{ 0 };
+        bool break_next_time{ false };
+        bool break_call_from{ false };
+        bool break_invoke_time{ false };
+        long invoke_time{ 0 };
+        long long call_from{ 0 };
+
+        std::vector<char, Allocator::allocator<char>> Serial()
+        {
+            std::vector<char, Allocator::allocator<char>> vec;
+            SerialInit(vec);
+            SerialItem(vec, func_addr);
+            SerialItem(vec, break_next_time);
+            SerialItem(vec, break_call_from);
+            SerialItem(vec, break_invoke_time);
+            SerialItem(vec, invoke_time);
+            SerialItem(vec, call_from);
+            CalFinalLength(vec);
+            return vec;
+        }
+        void Unserial(std::vector<char, Allocator::allocator<char>>& str)
+        {
+            size_t idx = GetFirstItemIndex(str);
+            idx = ExtractItem(str, idx, func_addr);
+            idx = ExtractItem(str, idx, break_next_time);
+            idx = ExtractItem(str, idx, break_call_from);
+            idx = ExtractItem(str, idx, break_invoke_time);
+            idx = ExtractItem(str, idx, invoke_time);
+            idx = ExtractItem(str, idx, call_from);
         }
     };
 

@@ -79,6 +79,8 @@ private:
     #define Vlog(cond) ((void*)0)
 #endif
 
+void ProcessCmd(const PipeDefine::Message* msg);
+
 class PipeLine
 {
 public:
@@ -268,7 +270,7 @@ RETRY_READ:
             else
             {
                 // 指令
-                ProcessCmd(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
+                ProcessCmd((PipeDefine::Message*)&*tmpBuffer.begin());
             }
         } while (!runOnce);
         Vlog("[PipeLine::ReadThread] exit.");
@@ -316,19 +318,6 @@ RETRY_READ:
         Vlog("[PipeLine::WriteThread] exit.");
         return 0;
     }
-
-    static void ProcessCmd(const MsgVec & msg)
-    {
-        PipeDefine::Message* ptr = (PipeDefine::Message*)msg.data();
-        switch (ptr->type)
-        {
-        case PipeDefine::Pipe_S_Req_SuspendProcess:
-            break;
-
-        case PipeDefine::Pipe_S_Req_ResumeProcess:
-            break;
-        }
-    }
 };
 PipeLine* PipeLine::msPipe;
 
@@ -338,14 +327,25 @@ public:
     static HookEntries msEntries;
     struct Entry
     {
+        struct Param
+        {
+            static constexpr UCHAR FLAG_BREAK_NEXT_TIME              = 1;
+            static constexpr UCHAR FLAG_BREAK_WHEN_CALL_FROM         = 2;
+            static constexpr UCHAR FLAG_BREAK_WHEN_REACH_INVOKE_TIME = 4;
+            long     mInvokeCount{ 0 };
+            UCHAR    mFlag{ 0 };
+            long     mBreakReachInvokeTime{ 0 };
+            LONG_PTR mBreakCallFromAddr{ 0 };
+        };
         static constexpr size_t ByteCodeLength = 32;
         typedef void (__stdcall * FN_HookFunction)(uint32_t self_index, LONG_PTR call_from);
         uint32_t                mSelfIndex;
         char*                   mBytesCode;
         string                  mModuleName;
         string                  mFuncName;
-        std::array<char, 128>   mParams;
+        Param                   mParams;
         FN_HookFunction         mHookFunction;
+        uint64_t                mOriginalVA;
 
         Entry() { mBytesCode = (char*)Allocator::MallocExe(ByteCodeLength); }
 
@@ -354,7 +354,6 @@ public:
             mHookFunction = CommonHookFunction;
             mSelfIndex = index;
             memset(mBytesCode, 0, ByteCodeLength);
-            memset(mParams.data(), 0, mParams.size());
             mModuleName.clear();
             mFuncName.clear();
         }
@@ -362,25 +361,40 @@ public:
     static void __stdcall CommonHookFunction(uint32_t self_index, LONG_PTR call_from)
     {
         Entry* e = msEntries.GetEntry(self_index);
-        Vlog("[HookEntries::CommonHookFunction] self index: " << self_index
+        Vlog("[HookEntries::CommonHookFunction] entry: " << e
             << ", func name: " << (e ? e->mFuncName.c_str() : "<idx error>")
-            << ", call from: " << (LPVOID)call_from << ", invoke time: " << (e ? *(int*)e->mParams.data() : -1));
+            << ", call from: " << (LPVOID)call_from << ", invoke time: " << (e ? e->mParams.mInvokeCount : -1) << ", flag: " << (e ? e->mParams.mFlag : -1));
         
         if (e)
         {
-            _InlineInterlockedAdd((LONG*)e->mParams.data(), 1);
+            _InlineInterlockedAdd(&e->mParams.mInvokeCount, 1);
             PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
             PipeDefine::msg::ApiInvoked msgApiInvoke;
             msgApiInvoke.module_name = e->mModuleName.c_str();
             msgApiInvoke.api_name = e->mFuncName.c_str();
-            msgApiInvoke.tid = param->f_GetCurrentThreadId();
-            msgApiInvoke.times = *(long*)e->mParams.data();
+            msgApiInvoke.times = e->mParams.mInvokeCount;
             msgApiInvoke.call_from = call_from;
             auto content = msgApiInvoke.Serial();
             PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
-            PipeDefine::PipeMsg msg;
-            content.clear();
-            //PipeLine::msPipe.Recv(msg, content);
+
+            if (e->mParams.mFlag & Entry::Param::FLAG_BREAK_NEXT_TIME)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_NEXT_TIME;
+                Vlog("[CommonHookFunction] int 3(next)");
+                __asm int 3
+            }
+            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == e->mParams.mBreakCallFromAddr)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
+                Vlog("[CommonHookFunction] int 3(addr)");
+                __asm int 3
+            }
+            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME) && e->mParams.mInvokeCount == e->mParams.mBreakReachInvokeTime)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
+                Vlog("[CommonHookFunction] int 3(time)");
+                __asm int 3
+            }
         }
     }
     static NTSTATUS __stdcall LdrLoadDllHookFunction(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
@@ -415,6 +429,54 @@ private:
 HookEntries HookEntries::msEntries;
 
 
+
+
+void ProcessCmd(const PipeDefine::Message* msg)
+{
+    Vlog("[ProcessCmd] server cmd: " << msg->type);
+    switch (msg->type)
+    {
+    case PipeDefine::Pipe_S_Req_SuspendProcess:
+        break;
+
+    case PipeDefine::Pipe_S_Req_ResumeProcess:
+        break;
+
+    case PipeDefine::Pipe_S_Req_SetBreakCondition: {
+        PipeDefine::msg::SetBreakCondition sbc;
+        PipeLine::MsgVec content(msg->Content, msg->Content + msg->ContentSize);
+        sbc.Unserial(content);
+        for (size_t i = 0; ; ++i)
+        {
+            HookEntries::Entry* e = HookEntries::msEntries.GetEntry(i);
+            if (!e)
+                break;
+            if (e->mOriginalVA == sbc.func_addr)
+            {
+                Vlog("[ProcessCmd] found func va: " << e->mOriginalVA << "entry: " << e);
+                if (sbc.break_call_from)
+                {
+                    e->mParams.mBreakCallFromAddr = sbc.call_from;
+                    e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
+                }
+                if (sbc.break_invoke_time)
+                {
+                    e->mParams.mBreakReachInvokeTime = sbc.invoke_time;
+                    e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
+                }
+                if (sbc.break_next_time)
+                {
+                    e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
+                }
+                break;
+            }
+        }
+        break;
+    }
+    }
+}
+
+
 ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
@@ -426,6 +488,7 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
     }
     e->mModuleName = modname;
     e->mFuncName = funcName;
+    e->mOriginalVA = (ULONG_PTR)hmod + (ULONG_PTR)*(PDWORD)oldRvaPtr;    
 
     if (strcmp(funcName, "LdrLoadDll"))
     {
