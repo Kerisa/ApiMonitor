@@ -105,6 +105,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
             }
         }
     }
+    assert(found);
     if (found)
     {
         char jmp[2];
@@ -120,76 +121,81 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         WriteProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100 + position), jmp2, sizeof(jmp2), &R);
     }
 
-
     FreeLibrary(hDll2);
     return oep;
 }
 
-void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer)
+class PipeReply
 {
-    printf("data arrive. size=%d\n", readDataSize);
-    if (readDataSize < sizeof(PipeDefine::MsgReq) + sizeof(size_t))
-    {
-        // 过短消息
-        printf("too short.");
-        return;
-    }
+public:
+    bool mSuspendTargetOnNextMsg{ false };
 
-    PipeDefine::Message* msg = (PipeDefine::Message*)readData;
-    switch (msg->Req)
+    void operator()(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer)
     {
-    case PipeDefine::Pipe_Req_Inited: {
-        PipeDefine::msg::Init m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        m.dummy += 1;
-        str = m.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->Ack = PipeDefine::Pipe_Ack_Inited;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
-    }
-    case PipeDefine::Pipe_Req_ModuleApiList: {
-        PipeDefine::msg::ModuleApis m;
-        PipeDefine::msg::ApiFilter  f;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
-        f.module_name = m.module_name;
-        for (size_t i = 0; i < m.apis.size(); ++i)
+        printf("data arrive. size=%d\n", readDataSize);
+        if (readDataSize < sizeof(PipeDefine::PipeMsg) + sizeof(size_t))
         {
-            if (m.apis[i].forward_api)
-                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward-to: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-                    (m.apis[i].data_export ? "yes" : "no"), m.apis[i].forwardto.c_str());
-            else
-                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward: no\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-                    (m.apis[i].data_export ? "yes" : "no"));
-            PipeDefine::msg::ApiFilter::Api a;
-            a.api_name = m.apis[i].name;
-            a.filter = true;
-            f.apis.push_back(a);
+            // 过短消息
+            printf("too short.");
+            return;
         }
-        str = f.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->Ack = PipeDefine::Pipe_Ack_FilterApi;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
+
+        PipeDefine::Message* msg = (PipeDefine::Message*)readData;
+        switch (msg->type)
+        {
+        case PipeDefine::Pipe_C_Req_Inited: {
+            PipeDefine::msg::Init m;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            m.dummy += 1;
+            str = m.Serial();
+            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+            msg2->type = PipeDefine::Pipe_S_Ack_Inited;
+            msg2->tid = msg->tid;
+            msg2->ContentSize = str.size();
+            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+            break;
+        }
+        case PipeDefine::Pipe_C_Req_ModuleApiList: {
+            PipeDefine::msg::ModuleApis m;
+            PipeDefine::msg::ApiFilter  f;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
+            f.module_name = m.module_name;
+            for (size_t i = 0; i < m.apis.size(); ++i)
+            {
+                if (m.apis[i].forward_api)
+                    printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward-to: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
+                    (m.apis[i].data_export ? "yes" : "no"), m.apis[i].forwardto.c_str());
+                else
+                    printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward: no\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
+                    (m.apis[i].data_export ? "yes" : "no"));
+                PipeDefine::msg::ApiFilter::Api a;
+                a.api_name = m.apis[i].name;
+                a.filter = true;
+                f.apis.push_back(a);
+            }
+            str = f.Serial();
+            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+            msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
+            msg2->tid = msg->tid;
+            msg2->ContentSize = str.size();
+            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+            break;
+        }
+        case PipeDefine::Pipe_C_Req_ApiInvoked: {
+            PipeDefine::msg::ApiInvoked m;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), m.tid, m.call_from, m.times);
+            break;
+        }
+        }
     }
-    case PipeDefine::Pipe_Req_ApiInvoked: {
-        PipeDefine::msg::ApiInvoked m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), m.tid, m.call_from, m.times);
-        break;
-    }
-    }
-}
+};
 
 int main(int argc, char** argv)
 {
@@ -204,7 +210,6 @@ int main(int argc, char** argv)
 
     LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
-
     SIZE_T R = 0;
     PARAM param;
     memset(&param, 0, sizeof(PARAM));
@@ -215,21 +220,30 @@ int main(int argc, char** argv)
     param.ctx.ContextFlags = CONTEXT_ALL;
     GetThreadContext(pi.hThread, &param.ctx);
 
-
-
     WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;
     copy.Eax = (DWORD)oep;
     SetThreadContext(pi.hThread, &copy);
 
     NamedPipeServer ps;
+    PipeReply reply;
     std::thread th = std::thread([&]() {
-        ps.StartServer(PipeDefine::PIPE_NAME, Reply);
+        ps.StartServer(PipeDefine::PIPE_NAME, reply);
     });
 
     while (!ps.IsRunning())
         Sleep(1);
     ResumeThread(pi.hThread);
+
+    Sleep(3000);
+    MessageBoxA(0, "will suspend.", 0, 0);
+    auto sus = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtSuspendProcess");
+    sus(pi.hProcess);
+    MessageBoxA(0, "will resume.", 0, 0);
+    auto res = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtResumeProcess");
+    res(pi.hProcess);
+
+
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 

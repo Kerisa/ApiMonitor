@@ -21,6 +21,12 @@ typedef NTSTATUS(NTAPI * FN_LdrLoadDll)(
     PUNICODE_STRING      ModuleFileName,
     PHANDLE              ModuleHandle);
 
+typedef LONG (NTAPI *FN_NtSuspendProcess)(
+    HANDLE ProcessHandle);
+
+typedef LONG (NTAPI *FN_NtResumeProcess)(
+    HANDLE ProcessHandle);
+
 typedef FARPROC(WINAPI * FN_GetProcAddress)(
     HMODULE hModule,
     LPCSTR  lpProcName);
@@ -154,7 +160,7 @@ typedef void (WINAPI * FN_Sleep)(DWORD dwMilliseconds);
 
 struct PARAM
 {
-    static const DWORD PARAM_ADDR = 0x10000000;
+    static const DWORD PARAM_ADDR = 0x7ffd0000;
     static const DWORD PARAM_SIZE = 4096;
     LPVOID ntdllBase;
     LPVOID kernelBase;
@@ -170,6 +176,8 @@ struct PARAM
     // ntdll
     FN_LdrInitializeThunk        f_LdrInitializeThunk;
     FN_LdrLoadDll                f_LdrLoadDll;
+    FN_NtSuspendProcess          f_NtSuspendProcess;
+    FN_NtResumeProcess           f_NtResumeProcess;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;

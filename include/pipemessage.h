@@ -7,35 +7,31 @@ namespace PipeDefine
 {
     const char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
 
-    enum MsgReq
+    enum PipeMsg
     {
-        Pipe_Req_Inited,
-        Pipe_Req_FilterModule,
-        Pipe_Req_FilterApi,
-        Pipe_Req_ModuleApiList,
-        Pipe_Req_ApiInvoked,
-    };
+        Pipe_C_Req_Inited,
+        Pipe_C_Req_FilterModule,
+        Pipe_C_Req_FilterApi,
+        Pipe_C_Req_ModuleApiList,
+        Pipe_C_Req_ApiInvoked,
 
-    enum MsgAck
-    {
-        Pipe_Ack_Inited,
-        Pipe_Ack_FilterModule,
-        Pipe_Ack_FilterApi,
-        Pipe_Ack_ApiInvoked,
+        Pipe_S_Ack_Inited,
+        Pipe_S_Ack_FilterModule,
+        Pipe_S_Ack_FilterApi,
+        Pipe_S_Ack_ApiInvoked,
+
+        Pipe_S_Req_SuspendProcess,
+        Pipe_S_Req_ResumeProcess,
+        Pipe_S_Req_SetBreakCondition,
     };
 
     struct Message
     {
-        static constexpr const size_t HeaderLength = sizeof(MsgReq) + sizeof(size_t) + sizeof(DWORD);
-        union {
-            MsgReq Req;
-            MsgAck Ack;
-        };
-        static_assert(sizeof(MsgReq) == sizeof(MsgAck), "sizeof(MsgReq) == sizeof(MsgAck)");
-
-        DWORD tid;
-        size_t ContentSize;
-        char Content[1];
+        static constexpr const size_t HeaderLength = sizeof(PipeMsg) + sizeof(size_t) + sizeof(DWORD);
+        PipeMsg     type;
+        DWORD       tid;
+        size_t      ContentSize;
+        char        Content[1];
     };
 
 namespace detail

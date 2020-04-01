@@ -11,6 +11,8 @@
 
 using Allocator::string;
 
+PARAM* g_Param;
+
 class SStream
 {
 public:
@@ -82,6 +84,18 @@ class PipeLine
 public:
     static PipeLine* msPipe;
 
+    typedef std::vector<char, Allocator::allocator<char>> MsgVec;
+    typedef std::list<MsgVec, Allocator::allocator<MsgVec>> ThreadMsgList;
+    typedef std::map<DWORD, ThreadMsgList, std::less<DWORD>, Allocator::allocator<std::pair<const DWORD, ThreadMsgList>>> ThreadMsgMap;
+    ThreadMsgMap* mMsgReadBuffer{ nullptr };
+    ThreadMsgList * mMsgWriteBuffer{ nullptr };
+    CRITICAL_SECTION csRead;
+    CRITICAL_SECTION csWrite;
+    HANDLE mPipe;
+    HANDLE mReadThreadHandle;
+    HANDLE mWriteThreadHandle;
+
+
     PipeLine()
     {
         mMsgReadBuffer = (ThreadMsgMap*)Allocator::Malloc(sizeof(ThreadMsgMap));
@@ -141,7 +155,7 @@ public:
         return true;
     }
 
-    bool Send(PipeDefine::MsgReq type, const std::vector<char, Allocator::allocator<char>> & content)
+    bool Send(PipeDefine::PipeMsg type, const std::vector<char, Allocator::allocator<char>> & content)
     {
         if (mPipe == INVALID_HANDLE_VALUE)
         {
@@ -153,7 +167,7 @@ public:
         DWORD dummy = 0;
         std::vector<char, Allocator::allocator<char>> m(PipeDefine::Message::HeaderLength);
         PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
-        ptr->Req = type;
+        ptr->type = type;
         ptr->tid = param->f_GetCurrentThreadId();
         ptr->ContentSize = content.size();
         m.insert(m.end(), content.begin(), content.end());
@@ -170,7 +184,7 @@ public:
         return true;
     }
 
-    bool Recv(PipeDefine::MsgAck & type, std::vector<char, Allocator::allocator<char>> & content)
+    bool Recv(PipeDefine::PipeMsg & type, std::vector<char, Allocator::allocator<char>> & content)
     {
         if (mPipe == INVALID_HANDLE_VALUE)
         {
@@ -193,7 +207,7 @@ public:
             {
                 MsgVec& m = msgL.front();
                 PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
-                type = ptr->Ack;
+                type = ptr->type;
                 content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
                 msgL.pop_front();
                 wait = false;
@@ -240,14 +254,22 @@ RETRY_READ:
             }
             if ((ptr->ContentSize + PipeDefine::Message::HeaderLength != bytesRead) || (bytesRead >= tmpBuffer.size()))
             {
-                Vlog("[PipeLine::ReadThread] message may corrupted, bytesRead: " << bytesRead << "type: " << ptr->Ack << ", size: " << ptr->ContentSize);
+                Vlog("[PipeLine::ReadThread] message may corrupted, bytesRead: " << bytesRead << "type: " << ptr->type << ", size: " << ptr->ContentSize);
                 continue;
             }
 
-            param->f_EnterCriticalSection(&msPipe->csRead);
-            ThreadMsgList& msgV = (*msPipe->mMsgReadBuffer)[ptr->tid];
-            msgV.push_back(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
-            param->f_LeaveCriticalSection(&msPipe->csRead);
+            if (ptr->tid != -1)
+            {
+                param->f_EnterCriticalSection(&msPipe->csRead);
+                ThreadMsgList& msgV = (*msPipe->mMsgReadBuffer)[ptr->tid];
+                msgV.push_back(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
+                param->f_LeaveCriticalSection(&msPipe->csRead);
+            }
+            else
+            {
+                // 指令
+                ProcessCmd(MsgVec(tmpBuffer.begin(), tmpBuffer.begin() + bytesRead));
+            }
         } while (!runOnce);
         Vlog("[PipeLine::ReadThread] exit.");
         return 0;
@@ -295,16 +317,18 @@ RETRY_READ:
         return 0;
     }
 
-    typedef std::vector<char, Allocator::allocator<char>> MsgVec;
-    typedef std::list<MsgVec, Allocator::allocator<MsgVec>> ThreadMsgList;
-    typedef std::map<DWORD, ThreadMsgList, std::less<DWORD>, Allocator::allocator<std::pair<const DWORD, ThreadMsgList>>> ThreadMsgMap;
-    ThreadMsgMap* mMsgReadBuffer{ nullptr };
-    ThreadMsgList * mMsgWriteBuffer{ nullptr };
-    CRITICAL_SECTION csRead;
-    CRITICAL_SECTION csWrite;
-    HANDLE mPipe;
-    HANDLE mReadThreadHandle;
-    HANDLE mWriteThreadHandle;
+    static void ProcessCmd(const MsgVec & msg)
+    {
+        PipeDefine::Message* ptr = (PipeDefine::Message*)msg.data();
+        switch (ptr->type)
+        {
+        case PipeDefine::Pipe_S_Req_SuspendProcess:
+            break;
+
+        case PipeDefine::Pipe_S_Req_ResumeProcess:
+            break;
+        }
+    }
 };
 PipeLine* PipeLine::msPipe;
 
@@ -353,8 +377,8 @@ public:
             msgApiInvoke.times = *(long*)e->mParams.data();
             msgApiInvoke.call_from = call_from;
             auto content = msgApiInvoke.Serial();
-            PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ApiInvoked, content);
-            PipeDefine::MsgAck msg;
+            PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
+            PipeDefine::PipeMsg msg;
             content.clear();
             //PipeLine::msPipe.Recv(msg, content);
         }
@@ -673,8 +697,8 @@ void HookLoadedModules()
         CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, msgModuleApis);
 
         auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
-        PipeDefine::MsgAck recv_type;
+        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+        PipeDefine::PipeMsg recv_type;
         content.clear();
         PipeLine::msPipe->Recv(recv_type, content);
         PipeDefine::msg::ApiFilter filter;
@@ -749,6 +773,9 @@ void GetApis()
     if (!param->f_GetProcAddress)
         param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)param->kernelBase, "GetProcAddress");
 
+    param->f_NtSuspendProcess = (FN_NtSuspendProcess)param->f_GetProcAddress((HMODULE)param->ntdllBase, "NtSuspendProcess");
+    param->f_NtResumeProcess = (FN_NtResumeProcess)param->f_GetProcAddress((HMODULE)param->ntdllBase, "NtResumeProcess");
+
     param->f_GetModuleHandleA = (FN_GetModuleHandleA)param->f_GetProcAddress((HMODULE)param->kernelBase, "GetModuleHandleA");
     param->f_OpenThread = (FN_OpenThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "OpenThread");
     param->f_SuspendThread = (FN_SuspendThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "SuspendThread");
@@ -809,8 +836,8 @@ void DebugMessage()
     PipeDefine::msg::Init msgInit;
     msgInit.dummy = 0xaa55ccdd;
     auto content = msgInit.Serial();
-    PipeLine::msPipe->Send(PipeDefine::Pipe_Req_Inited, content);
-    PipeDefine::MsgAck recv_type;
+    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_Inited, content);
+    PipeDefine::PipeMsg recv_type;
     content.clear();
     PipeLine::msPipe->Recv(recv_type, content);
     msgInit.Unserial(content);
@@ -877,8 +904,8 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
 
         auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
-        PipeDefine::MsgAck recv_type;
+        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+        PipeDefine::PipeMsg recv_type;
         content.clear();
         PipeLine::msPipe->Recv(recv_type, content);
         PipeDefine::msg::ApiFilter filter;
@@ -898,8 +925,8 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         CollectModuleInfo((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
 
         auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_Req_ModuleApiList, content);
-        PipeDefine::MsgAck recv_type;
+        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+        PipeDefine::PipeMsg recv_type;
         content.clear();
         PipeLine::msPipe->Recv(recv_type, content);
         PipeDefine::msg::ApiFilter filter;
