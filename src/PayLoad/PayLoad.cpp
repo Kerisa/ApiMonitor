@@ -389,7 +389,7 @@ public:
                 Vlog("[CommonHookFunction] int 3(addr)");
                 __asm int 3
             }
-            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME) && e->mParams.mInvokeCount == e->mParams.mBreakReachInvokeTime)
+            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME) && e->mParams.mInvokeCount == e->mParams.mBreakReachInvokeTime + 1) // 从 0 计数
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
                 Vlog("[CommonHookFunction] int 3(time)");

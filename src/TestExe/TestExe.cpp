@@ -14,7 +14,16 @@ int main(int argc, char** argv)
     ss << (ULONG_PTR)OutputDebugStringA;
     ss << "  TestExe: execute main\n";
     OutputDebugStringA(ss.str().c_str());
+    ss << ", second";
+    OutputDebugStringA(ss.str().c_str());
     HANDLE nt = GetModuleHandleA("ntdll.dll");
+
+    int times = 100;
+    while (times--)
+    {
+        OutputDebugStringA(ss.str().c_str());
+        Sleep(500);
+    }
 
     return (int)nt + Print(1);
 }
