@@ -163,18 +163,7 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
     m_listApiCalls.InsertColumn(3, _T("Module"),  LVCFMT_LEFT, 120, -1);
     m_listApiCalls.InsertColumn(4, _T("Name"),    LVCFMT_LEFT, 150, -1);
     m_listApiCalls.InsertColumn(5, _T("Count"),   LVCFMT_LEFT, 50,  -1);
-    //HDITEM hdi;
-    //hdi.mask = HDI_TEXT | HDI_WIDTH | HDI_FORMAT | HDI_IMAGE;
-    //hdi.fmt = HDF_STRING | HDF_CENTER;
-    //TCHAR* colums[6] = { _T("No."), _T("TID"), _T("RetAddr"),_T("Module"), _T("Name"), _T("Count") };
-    //int width[6] = { 50,50,70,120,150,50 };
-    //for (int i = 0; i < 6; i++)
-    //{
-    //    hdi.cxy = width[i];
-    //    hdi.iImage = i % 3;
-    //    hdi.pszText = colums[i];
-    //    m_listApiCalls.GetHeaderCtrl()->InsertItem(i, &hdi);
-    //}
+
     m_listApiCalls.Invalidate();
 
     m_Controller = new PipeController();
@@ -185,7 +174,6 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
     m_Monitor->SetPipeHandler(m_Controller);
 
     m_editFilePath.SetWindowText(L"C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\TestExe.exe");
-    UpdateData(FALSE);
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -279,7 +267,6 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         me.mName = m.module_name;
         me.mPath = m.module_path;
         me.mBase = m.module_base;
-        //printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
         for (size_t i = 0; i < m.apis.size(); ++i)
         {
             ModuleInfoItem::ApiEntry ae;
@@ -289,12 +276,6 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             ae.mIsDataExport = m.apis[i].data_export;
             ae.mForwardto    = m.apis[i].forwardto;
             me.mApis.push_back(ae);
-            //if (m.apis[i].forward_api)
-            //    printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward-to: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-            //    (m.apis[i].data_export ? "yes" : "no"), m.apis[i].forwardto.c_str());
-            //else
-            //    printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward: no\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-            //    (m.apis[i].data_export ? "yes" : "no"));
             if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
                 pc->outputdbgstr = m.apis[i].va;
         }
@@ -414,8 +395,6 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
 
 void CApiMonitorUIDlg::OnSize(UINT nType, int cx, int cy)
 {
-    //UpdateData(TRUE);
-
     const int BORDER = 10;
 
     RECT rc;
@@ -430,6 +409,4 @@ void CApiMonitorUIDlg::OnSize(UINT nType, int cx, int cy)
     rc.right = cx - BORDER;
     rc.bottom = cy - BORDER;
     m_listApiCalls.SetWindowPos(NULL, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER);
-
-    //UpdateData(FALSE);
 }
