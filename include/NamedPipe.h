@@ -10,12 +10,12 @@ class NamedPipeServer
 
 public:
     // Writes to "writeData" directly if need reply, buffer up to "maxWriteBuffer" bytes
-    typedef std::function<void(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer)> ReplayFuncType;
+    typedef std::function<void(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer, void* userData)> ReplayFuncType;
 
     NamedPipeServer();
     ~NamedPipeServer();
 
-    void StartServer(const std::string &name, ReplayFuncType reply, bool writeThrough = false);
+    void StartServer(const std::string &name, ReplayFuncType reply, void* userData, bool writeThrough = false);
     bool IsRunning();
     bool StopServer();
 

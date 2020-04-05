@@ -429,6 +429,18 @@ private:
 HookEntries HookEntries::msEntries;
 
 
+bool IsMemoryReadable(LPVOID addr)
+{
+    __try
+    {
+        char c = *(char*)addr;
+        return true;
+    }
+    __except (1)
+    {
+        return false;
+    }
+}
 
 
 void ProcessCmd(const PipeDefine::Message* msg)
@@ -648,87 +660,91 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
     DWORD exportRVA = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
     PIMAGE_EXPORT_DIRECTORY imED = (PIMAGE_EXPORT_DIRECTORY)(lpImage + exportRVA);
     long pExportSize = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
-    if (!(pExportSize == 0 || (ULONG_PTR)imED <= (ULONG_PTR)lpImage))
+    if (pExportSize == 0 || !IsMemoryReadable(imED))
     {
-        // 存在导出表
-        if (imED->NumberOfFunctions > 0)
+        Vlog("[CollectModuleInfo] export table empty or bad address, size: " << pExportSize << ", va: " << imED);
+        return;
+    }
+    // 存在导出表
+    if (imED->NumberOfFunctions <= 0)
+    {
+        Vlog("[CollectModuleInfo] number of functions <= 0.");
+        return;
+    }
+    PWORD lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
+    PDWORD lpNames = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
+    PDWORD lpRvas = (PDWORD)(lpImage + imED->AddressOfFunctions);
+    PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)(imNH + 1);
+    int nsec = imNH->FileHeader.NumberOfSections;
+    for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
+    {
+        PipeDefine::msg::ModuleApis::ApiDetail ad;
+        DWORD rvafunc = lpRvas[i];
+        DWORD oftName = 0;
+        // 找出函数对应的名称
+        if (lpNames && lpOrdinals)
         {
-            PWORD lpOrdinals = imED->AddressOfNameOrdinals ? (PWORD)(lpImage + imED->AddressOfNameOrdinals) : 0;
-            PDWORD lpNames = imED->AddressOfNames ? (PDWORD)(lpImage + imED->AddressOfNames) : 0;
-            PDWORD lpRvas = (PDWORD)(lpImage + imED->AddressOfFunctions);
-            PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)(imNH + 1);
-            int nsec = imNH->FileHeader.NumberOfSections;
-            for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
+            for (DWORD k = 0; k < imED->NumberOfNames; ++k)
             {
-                PipeDefine::msg::ModuleApis::ApiDetail ad;
-                DWORD rvafunc = lpRvas[i];
-                DWORD oftName = 0;
-                // 找出函数对应的名称
-                if (lpNames && lpOrdinals)
+                if (lpOrdinals[k] == i)
                 {
-                    for (DWORD k = 0; k < imED->NumberOfNames; ++k)
-                    {
-                        if (lpOrdinals[k] == i)
-                        {
-                            oftName = lpNames[k];
-                            break;
-                        }
-                    }
+                    oftName = lpNames[k];
+                    break;
                 }
-                if (oftName)
-                    Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (lpImage + oftName));
-                else
-                    Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: ordinal " << i);
-
-                bool dataExp = false;
-                bool forwardApi = false;
-                // 判断是否为转向函数导出
-                if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
-                {
-                    // 如果不是转向函数则遍历整个区段判断是否为数据导出。
-                    // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
-                    BOOL isDataExport = TRUE;
-                    PIMAGE_SECTION_HEADER ishcur;
-                    for (int j = 0; j < nsec; ++j)
-                    {
-                        ishcur = ish + j;
-                        if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
-                        {
-                            if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
-                            {
-                                isDataExport = FALSE;
-                                break;
-                            }
-                        }
-                    }
-                    if (isDataExport)
-                        Vlog("dataApi: -");
-                    dataExp = !!isDataExport;
-                }
-                else
-                {
-                    // 是转向函数，设定转向信息
-                    Vlog("redirectApi: " << lpImage + rvafunc);
-                    forwardApi = true;
-                }
-
-                ad.rva = rvafunc;
-                ad.va = rvafunc + (DWORD)lpImage;
-                if (oftName)
-                    ad.name = lpImage + oftName;
-                else
-                {
-                    SStream ml;
-                    ml << i;
-                    ad.name = string("ordinal ") + ml.str();
-                }
-                if (forwardApi)
-                    ad.forwardto = lpImage + rvafunc;
-                ad.data_export = dataExp;
-                ad.forward_api = forwardApi;
-                msgModuleApis.apis.push_back(ad);
             }
         }
+        if (oftName)
+            Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: " << (lpImage + oftName));
+        else
+            Vlog("orgRVA: " << rvafunc << ", apiBase: " << rvafunc << ", apiName: ordinal " << i);
+
+        bool dataExp = false;
+        bool forwardApi = false;
+        // 判断是否为转向函数导出
+        if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
+        {
+            // 如果不是转向函数则遍历整个区段判断是否为数据导出。
+            // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
+            BOOL isDataExport = TRUE;
+            PIMAGE_SECTION_HEADER ishcur;
+            for (int j = 0; j < nsec; ++j)
+            {
+                ishcur = ish + j;
+                if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
+                {
+                    if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+                    {
+                        isDataExport = FALSE;
+                        break;
+                    }
+                }
+            }
+            if (isDataExport)
+                Vlog("dataApi: -");
+            dataExp = !!isDataExport;
+        }
+        else
+        {
+            // 是转向函数，设定转向信息
+            Vlog("redirectApi: " << lpImage + rvafunc);
+            forwardApi = true;
+        }
+
+        ad.rva = rvafunc;
+        ad.va = rvafunc + (DWORD)lpImage;
+        if (oftName)
+            ad.name = lpImage + oftName;
+        else
+        {
+            SStream ml;
+            ml << i;
+            ad.name = string("ordinal ") + ml.str();
+        }
+        if (forwardApi)
+            ad.forwardto = lpImage + rvafunc;
+        ad.data_export = dataExp;
+        ad.forward_api = forwardApi;
+        msgModuleApis.apis.push_back(ad);
     }
     Vlog("[CollectModuleInfo] exit.");
 }
@@ -962,25 +978,29 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         BuildPipe();
         param->bInited = true;
 
-        // for ntdll
-        PipeDefine::msg::ModuleApis msgModuleApis;
-        CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
-
-        auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-        PipeDefine::PipeMsg recv_type;
-        content.clear();
-        PipeLine::msPipe->Recv(recv_type, content);
-        PipeDefine::msg::ApiFilter filter;
-        filter.Unserial(content);
-        Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-
-        HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
-
+        // 三巨头
+        const int preLoadCount = 3;
+        HMODULE preLoadAddr[preLoadCount] = { (HMODULE)param->ntdllBase, (HMODULE)param->kernelBase, (HMODULE)param->kernel32 };
+        const char* preLoadName[preLoadCount] = { "ntdll.dll", "kernelbase.dll", "kernel32.dll" };
+        for (int i = 0; i < preLoadCount; ++i)
+        {
+            PipeDefine::msg::ModuleApis msgModuleApis;
+            CollectModuleInfo(preLoadAddr[i], preLoadName[i], preLoadName[i], msgModuleApis);
+            auto content = msgModuleApis.Serial();
+            PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+            PipeDefine::PipeMsg recv_type;
+            content.clear();
+            PipeLine::msPipe->Recv(recv_type, content);
+            PipeDefine::msg::ApiFilter filter;
+            filter.Unserial(content);
+            Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+            HookModuleExportTable(preLoadAddr[i], preLoadName[i], preLoadName[i]);
+        }
     }
 
+    Vlog("[HookLdrLoadDllPad] ret value: " << ret << ", base: " << *ModuleHandle);
     // for this new loaded dll
-    if (ret == 0)
+    if (ret == 0 && *ModuleHandle != param->kernel32 && *ModuleHandle != param->kernelBase)
     {
         string moduleName(ModuleFileName->Buffer, ModuleFileName->Buffer + ModuleFileName->Length);
         Vlog("[HookLdrLoadDllPad] dll: " << moduleName.c_str() << ", base: " << *ModuleHandle);
@@ -997,6 +1017,10 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
 
         HookModuleExportTable((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str());
+    }
+    else
+    {
+        Vlog("[HookLdrLoadDllPad] skip.");
     }
     return ret;
 }

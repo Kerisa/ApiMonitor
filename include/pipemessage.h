@@ -5,7 +5,7 @@
 
 namespace PipeDefine
 {
-    const char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
+    const constexpr char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
 
     enum PipeMsg
     {
@@ -48,11 +48,9 @@ namespace detail
     constexpr size_t SerialHeaderSizeSpace = sizeof(SerialHeaderSize);
     constexpr size_t SerialItemSizeSpace = sizeof(SerialItemSize);
 
-    bool SerialInit(std::vector<char, Allocator::allocator<char>>& str)
-    {
-        str.resize(SerialHeaderSizeSpace);
-        return true;
-    }
+    bool SerialInit(std::vector<char, Allocator::allocator<char>>& str);
+    bool CalFinalLength(std::vector<char, Allocator::allocator<char>>& str);
+    size_t GetFirstItemIndex(std::vector<char, Allocator::allocator<char>>& str);
 
     template<class T>
     void SerialItem(std::vector<char, Allocator::allocator<char>>& str, T& n)
@@ -71,35 +69,9 @@ namespace detail
         str.insert(str.end(), c1, c1 + sizeof(c1));
         str.insert(str.end(), u.c2, u.c2 + sizeof(u.c2));
     }
-    template<>
-    void SerialItem(std::vector<char, Allocator::allocator<char>>& str, Allocator::string& n)
-    {
-        union {
-            SerialItemSize size;
-            char c1[SerialItemSizeSpace];
-        } u;
-        static_assert(sizeof(u.size) == sizeof(u.c1), "");
-        if (n.size() > USHRT_MAX)
-            throw "item size too large";
-        u.size = static_cast<SerialItemSize>(n.size());
-        str.insert(str.end(), u.c1, u.c1 + sizeof(u.c1));
-        str.insert(str.end(), n.begin(), n.end());
-    }
-    bool CalFinalLength(std::vector<char, Allocator::allocator<char>>& str)
-    {
-        if (str.size() < SerialHeaderSizeSpace)
-            return false;
-        *(SerialHeaderSize*)&str[0] = str.size();
-        return true;
-    }
 
-    size_t GetFirstItemIndex(std::vector<char, Allocator::allocator<char>>& str)
-    {
-        if (str.size() > SerialHeaderSizeSpace)
-            return SerialHeaderSizeSpace;
-        else
-            return 0;
-    }
+    template<>
+    void SerialItem(std::vector<char, Allocator::allocator<char>>& str, Allocator::string& n);
 
     template<class T>
     size_t ExtractItem(std::vector<char, Allocator::allocator<char>>& str, size_t from_byte_index, T& t)
@@ -116,19 +88,9 @@ namespace detail
         t = *(T*)&str[from_byte_index + SerialItemSizeSpace];
         return from_byte_index + SerialItemSizeSpace + size;
     }
+
     template<>
-    size_t ExtractItem(std::vector<char, Allocator::allocator<char>>& str, size_t from_byte_index, Allocator::string& s)
-    {
-        if (str.size() <= from_byte_index + SerialItemSizeSpace)
-            throw "msg too short";
-
-        SerialItemSize size = *(SerialItemSize*)&str[from_byte_index];
-        if (str.size() < size + SerialItemSizeSpace + from_byte_index)
-            throw "content too long";
-
-        s.assign((char*)&str[from_byte_index + SerialItemSizeSpace], (char*)&str[from_byte_index + SerialItemSizeSpace + size]);
-        return from_byte_index + SerialItemSizeSpace + size;
-    }
+    size_t ExtractItem(std::vector<char, Allocator::allocator<char>>& str, size_t from_byte_index, Allocator::string& s);
 
 } // namespace detail
 

@@ -195,6 +195,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\include\allocator.cpp" />
+    <ClCompile Include="..\..\include\pipemessage.cpp" />
     <ClCompile Include="PayLoad.cpp" />
   </ItemGroup>
   <ItemGroup>

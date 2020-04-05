@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <Windows.h>
 #include <tlhelp32.h>
 
 typedef VOID (NTAPI * FN_LdrInitializeThunk)(
@@ -15,7 +16,7 @@ typedef struct _UNICODE_STRING {
     PWSTR Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
 
-typedef NTSTATUS(NTAPI * FN_LdrLoadDll)(
+typedef LONG (NTAPI * FN_LdrLoadDll)(
     PWCHAR               PathToFile,
     ULONG                Flags,
     PUNICODE_STRING      ModuleFileName,

@@ -21,6 +21,9 @@
     <ClCompile Include="..\..\include\NamedPipe.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\include\pipemessage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\NamedPipe.h">

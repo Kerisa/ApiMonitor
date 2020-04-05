@@ -1,4 +1,4 @@
-Ôªø
+
 #include <cassert>
 #include <iostream>
 #include <thread>
@@ -7,8 +7,14 @@
 #include "def.h"
 #include "NamedPipe.h"
 #include "pipemessage.h"
+#include "ApiMonitor.h"
 
 using namespace std;
+
+
+namespace Detail
+{
+
 
 typedef struct reloc_line
 {
@@ -20,9 +26,9 @@ void LoadVReloc(ULONG_PTR hBase, bool bForce, ULONG_PTR delta)
 {
     PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)(hBase + ((PIMAGE_DOS_HEADER)hBase)->e_lfanew);
     if (imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress == 0)
-        return; // Ê≤°ÊúâÈáçÂÆö‰ΩçÊï∞ÊçÆ
+        return; // √ª”–÷ÿ∂®Œª ˝æ›
     if (hBase == imNH->OptionalHeader.ImageBase && bForce == FALSE)
-        return; // Ë£ÖÂÖ•‰∫ÜÈªòËÆ§Âú∞ÂùÄ
+        return; // ◊∞»Î¡Àƒ¨»œµÿ÷∑
     if (delta == 0)
         delta = hBase - imNH->OptionalHeader.ImageBase;
     ULONG_PTR lpreloc = hBase + imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
@@ -55,7 +61,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     ULONG_PTR entry = (ULONG_PTR)GetProcAddress(hDll2, "Entry");
     HANDLE hDll = CreateFile(dllPath, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hDll == INVALID_HANDLE_VALUE)
-        return NULL;    
+        return NULL;
     std::vector<char> file(GetFileSize(hDll, 0));
     SIZE_T R;
     ReadFile(hDll, file.data(), file.size(), &R, 0);
@@ -74,10 +80,10 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         memcpy(&memData[secHeader->VirtualAddress], imageData + secHeader->PointerToRawData, secHeader->SizeOfRawData);
         ++secHeader;
     }
-    memcpy(memData.data(), imageData, secHeaderBegin); // Â§çÂà∂ pe Â§¥
+    memcpy(memData.data(), imageData, secHeaderBegin); // ∏¥÷∆ pe Õ∑
     PVOID newBase = VirtualAllocEx(hProcess, 0, imageSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     ULONG_PTR delta = (ULONG_PTR)newBase - (ULONG_PTR)ntHeader->OptionalHeader.ImageBase;
-    if (delta != 0) // ÈúÄË¶ÅÈáçÂÆö‰Ωç
+    if (delta != 0) // –Ë“™÷ÿ∂®Œª
         LoadVReloc((ULONG_PTR)memData.data(), TRUE, delta);
     SIZE_T W = 0;
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
@@ -125,135 +131,27 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     return oep;
 }
 
-class PipeReply
-{
-public:
-    CRITICAL_SECTION mPipeMsgCS;
-    PipeDefine::msg::SetBreakCondition mSetBreakCondition;
-    bool mConditionReady{ false };
 
-    // debug
-    long long outputdbgstr{ 0 };
-
-    PipeReply()
-    {
-        InitializeCriticalSection(&mPipeMsgCS);
-    }
-
-    ~PipeReply()
-    {
-        DeleteCriticalSection(&mPipeMsgCS);
-    }
-
-    PipeDefine::msg::SetBreakCondition* Lock()
-    {
-        EnterCriticalSection(&mPipeMsgCS);
-        return &mSetBreakCondition;
-    }
-
-    void UnLock()
-    {
-        LeaveCriticalSection(&mPipeMsgCS);
-    }
-};
-PipeReply g_Reply;
-
-
-void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer, void* userData)
-{
-    printf("data arrive. size=%d\n", readDataSize);
-    if (readDataSize < sizeof(PipeDefine::PipeMsg) + sizeof(size_t))
-    {
-        // ËøáÁü≠Ê∂àÊÅØ
-        printf("too short.");
-        return;
-    }
-
-    PipeDefine::Message* msg = (PipeDefine::Message*)readData;
-    switch (msg->type)
-    {
-    case PipeDefine::Pipe_C_Req_Inited: {
-        PipeDefine::msg::Init m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        m.dummy += 1;
-        str = m.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->type = PipeDefine::Pipe_S_Ack_Inited;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
-    }
-    case PipeDefine::Pipe_C_Req_ModuleApiList: {
-        PipeDefine::msg::ModuleApis m;
-        PipeDefine::msg::ApiFilter  f;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        printf("module name: %s, base: %llx, path: %s\n", m.module_name.c_str(), m.module_base, m.module_path.c_str());
-        f.module_name = m.module_name;
-        for (size_t i = 0; i < m.apis.size(); ++i)
-        {
-            if (m.apis[i].forward_api)
-                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward-to: %s\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-                (m.apis[i].data_export ? "yes" : "no"), m.apis[i].forwardto.c_str());
-            else
-                printf("  (%05u) name: %s, va: 0x%llx, rva: 0x%llx, dataExp: %s, forward: no\n", i, m.apis[i].name.c_str(), m.apis[i].va, m.apis[i].rva,
-                (m.apis[i].data_export ? "yes" : "no"));
-            PipeDefine::msg::ApiFilter::Api a;
-            a.api_name = m.apis[i].name;
-            a.filter = true;
-            f.apis.push_back(a);
-            if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
-                g_Reply.outputdbgstr = m.apis[i].va;
-        }
-        str = f.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
-    }
-    case PipeDefine::Pipe_C_Req_ApiInvoked: {
-        PipeDefine::msg::ApiInvoked m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), msg->tid, m.call_from, m.times);
-        if (g_Reply.mConditionReady)
-        {
-            g_Reply.mConditionReady = false;
-            auto msg = g_Reply.Lock();
-            str = msg->Serial();
-            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-            msg2->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
-            msg2->tid = -1;
-            msg2->ContentSize = str.size();
-            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-            g_Reply.UnLock();
-            printf("condition sent!\n");
-        }
-        break;
-    }
-    }
 }
 
-int main(int argc, char** argv)
+
+
+void Monitor::SetPipeHandler(PipeController * controller)
 {
-    WCHAR app[MAX_PATH] = { 0 };
+    mControllerRef = controller;
+}
+
+int Monitor::LoadFile(const std::wstring& filePath)
+{
     WCHAR cmd[MAX_PATH] = { 0 };
-    MultiByteToWideChar(CP_ACP, 0, argv[1], -1, app, MAX_PATH - 1);
-    wcscpy_s(cmd, app);
+    wcscpy_s(cmd, filePath.c_str());
     STARTUPINFO si = { 0 };
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = { 0 };
-    BOOL success = CreateProcess(app, cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
+    BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
 
     LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+    PVOID oep = Detail::BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
     SIZE_T R = 0;
     PARAM param;
     memset(&param, 0, sizeof(PARAM));
@@ -271,7 +169,7 @@ int main(int argc, char** argv)
 
     NamedPipeServer ps;
     std::thread th = std::thread([&]() {
-        ps.StartServer(PipeDefine::PIPE_NAME, Reply, nullptr);
+        ps.StartServer(PipeDefine::PIPE_NAME, mControllerRef->mMsgHandler, mControllerRef->mUserData);
     });
 
     while (!ps.IsRunning())
@@ -287,19 +185,20 @@ int main(int argc, char** argv)
     //res(pi.hProcess);
     MessageBoxA(0, "break when \"OutputDebugStringA\" called.", 0, 0);
 
-    PipeDefine::msg::SetBreakCondition* cond = g_Reply.Lock();
-    cond->func_addr = g_Reply.outputdbgstr;
+    PipeDefine::msg::SetBreakCondition* cond = mControllerRef->Lock();
+    cond->func_addr = mControllerRef->outputdbgstr;
     cond->break_next_time = true;
-    g_Reply.UnLock();
-    g_Reply.mConditionReady = true;
+    mControllerRef->UnLock();
+    mControllerRef->mConditionReady = true;
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 
-    while (1)
+    while (!mStopMonitor)
         Sleep(1);
     ps.StopServer();
     th.join();
     return 0;
 }
+
 
