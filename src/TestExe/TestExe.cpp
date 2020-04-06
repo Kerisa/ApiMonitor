@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     OutputDebugStringA(ss.str().c_str());
     HANDLE nt = GetModuleHandleA("ntdll.dll");
 
-    int times = 100;
+    int times = 10;
     while (times--)
     {
         OutputDebugStringA(ss.str().c_str());
