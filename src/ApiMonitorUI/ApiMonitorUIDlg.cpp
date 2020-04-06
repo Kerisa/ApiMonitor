@@ -243,91 +243,100 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     }
 
     PipeDefine::Message* msg = (PipeDefine::Message*)readData;
-    switch (msg->type)
+    while ((const uint8_t *)msg - readData < readDataSize)
     {
-    case PipeDefine::Pipe_C_Req_Inited: {
-        PipeDefine::msg::Init m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        m.dummy += 1;
-        str = m.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->type = PipeDefine::Pipe_S_Ack_Inited;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
-    }
-    case PipeDefine::Pipe_C_Req_ModuleApiList: {
-        PipeDefine::msg::ModuleApis m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        ModuleInfoItem me;
-        me.mName = m.module_name;
-        me.mPath = m.module_path;
-        me.mBase = m.module_base;
-        for (size_t i = 0; i < m.apis.size(); ++i)
+        switch (msg->type)
         {
-            ModuleInfoItem::ApiEntry ae;
-            ae.mName         = m.apis[i].name;
-            ae.mVa           = m.apis[i].va;
-            ae.mIsForward    = m.apis[i].forward_api;
-            ae.mIsDataExport = m.apis[i].data_export;
-            ae.mForwardto    = m.apis[i].forwardto;
-            me.mApis.push_back(ae);
-            if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
-                pc->outputdbgstr = m.apis[i].va;
-        }
-        pc->mModuleApis.push_back(me);
-        dlg->UpdateModuleList(&me);
-
-        PipeDefine::msg::ApiFilter filter;
-        filter.module_name = m.module_name;
-        for (size_t i = 0; i < me.mApis.size(); ++i)
-        {
-            PipeDefine::msg::ApiFilter::Api filter_api;
-            filter_api.api_name = me.mApis[i].mName;
-            filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
-            filter.apis.push_back(filter_api);
-        }
-        str = filter.Serial();
-        PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-        msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
-        msg2->tid = msg->tid;
-        msg2->ContentSize = str.size();
-        memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-        *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-        break;
-    }
-    case PipeDefine::Pipe_C_Req_ApiInvoked: {
-        PipeDefine::msg::ApiInvoked m;
-        std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
-        m.Unserial(str);
-        ApiLogItem al;
-        al.mModuleName = m.module_name;
-        al.mApiName = m.api_name;
-        al.mCallFrom = m.call_from;
-        al.mTimes = m.times;
-        al.mTid = msg->tid;
-        dlg->AppendApiCallLog(&al);
-        //printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), msg->tid, m.call_from, m.times);
-        if (pc->mConditionReady)
-        {
-            pc->mConditionReady = false;
-            auto msg = pc->Lock();
-            str = msg->Serial();
+        case PipeDefine::Pipe_C_Req_Inited: {
+            PipeDefine::msg::Init m;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            m.dummy += 1;
+            str = m.Serial();
             PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-            msg2->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
-            msg2->tid = -1;
+            msg2->type = PipeDefine::Pipe_S_Ack_Inited;
+            msg2->tid = msg->tid;
             msg2->ContentSize = str.size();
             memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
             *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-            pc->UnLock();
-            printf("condition sent!\n");
+            break;
         }
-        break;
-    }
+        case PipeDefine::Pipe_C_Req_ModuleApiList: {
+            PipeDefine::msg::ModuleApis m;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            ModuleInfoItem me;
+            me.mName = m.module_name;
+            me.mPath = m.module_path;
+            me.mBase = m.module_base;
+            for (size_t i = 0; i < m.apis.size(); ++i)
+            {
+                ModuleInfoItem::ApiEntry ae;
+                ae.mName = m.apis[i].name;
+                ae.mVa = m.apis[i].va;
+                ae.mIsForward = m.apis[i].forward_api;
+                ae.mIsDataExport = m.apis[i].data_export;
+                ae.mForwardto = m.apis[i].forwardto;
+                me.mApis.push_back(ae);
+                if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
+                    pc->outputdbgstr = m.apis[i].va;
+            }
+            pc->mModuleApis.push_back(me);
+            dlg->UpdateModuleList(&me);
+
+            PipeDefine::msg::ApiFilter filter;
+            filter.module_name = m.module_name;
+            for (size_t i = 0; i < me.mApis.size(); ++i)
+            {
+                PipeDefine::msg::ApiFilter::Api filter_api;
+                filter_api.api_name = me.mApis[i].mName;
+                filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
+                filter.apis.push_back(filter_api);
+            }
+            str = filter.Serial();
+            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+            msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
+            msg2->tid = msg->tid;
+            msg2->ContentSize = str.size();
+            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+            break;
+        }
+        case PipeDefine::Pipe_C_Req_ApiInvoked: {
+            PipeDefine::msg::ApiInvoked m;
+            std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
+            m.Unserial(str);
+            ApiLogItem al;
+            al.mModuleName = m.module_name;
+            al.mApiName = m.api_name;
+            al.mCallFrom = m.call_from;
+            al.mTimes = m.times;
+            al.mTid = msg->tid;
+            dlg->AppendApiCallLog(&al);
+            //printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), msg->tid, m.call_from, m.times);
+            if (pc->mConditionReady)
+            {
+                pc->mConditionReady = false;
+                auto msg = pc->Lock();
+                str = msg->Serial();
+                PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+                msg2->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
+                msg2->tid = -1;
+                msg2->ContentSize = str.size();
+                memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+                *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+                pc->UnLock();
+                printf("condition sent!\n");
+            }
+            break;
+        }
+        default:
+            printf("unknown message type.\n");
+            throw "unknown message type.";
+            break;
+        }
+
+        msg = (PipeDefine::Message*)((intptr_t)msg + PipeDefine::Message::HeaderLength + msg->ContentSize);
     }
 }
 

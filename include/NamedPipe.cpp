@@ -158,7 +158,7 @@ public:
     NamedPipeServerImpl();
     ~NamedPipeServerImpl();
 
-    void StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool writeThrough);
+    void StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool messageModePipe, bool writeThrough);
     void StopServer();
     bool IsRunning();
 
@@ -166,6 +166,7 @@ private:
     bool CreateAndConnectInstance(HANDLE *pipe, LPOVERLAPPED ov);
 
     std::string mPipeName;
+    bool mMessageModePipe{ false };
     ReplayFuncType mReplayRoutine;
     std::vector<Detail::LPPIPEINST> mPipeGroup;
     std::atomic<bool> mStop{ true };
@@ -189,7 +190,7 @@ bool NamedPipeServer::NamedPipeServerImpl::CreateAndConnectInstance(HANDLE *pipe
     *pipe = CreateNamedPipeA(
         mPipeName.c_str(),
         PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+        PIPE_WAIT | (mMessageModePipe ? (PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE) : (PIPE_TYPE_BYTE | PIPE_READMODE_BYTE)),
         PIPE_UNLIMITED_INSTANCES,
         Detail::PIPEINST::BUFSIZE,
         Detail::PIPEINST::BUFSIZE,
@@ -227,7 +228,7 @@ bool NamedPipeServer::NamedPipeServerImpl::CreateAndConnectInstance(HANDLE *pipe
     return pendingIO;
 }
 
-void NamedPipeServer::NamedPipeServerImpl::StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool writeThrough)
+void NamedPipeServer::NamedPipeServerImpl::StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool messageModePipe, bool writeThrough)
 {
     assert(mExitEvent == NULL);
     mExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -236,6 +237,7 @@ void NamedPipeServer::NamedPipeServerImpl::StartServer(const std::string & name,
 
     //SetNamedPipeHandleState();
     mPipeName = name;
+    mMessageModePipe = messageModePipe;
     mStop = false;
 
 
@@ -352,9 +354,9 @@ NamedPipeServer::~NamedPipeServer()
     delete mImpl;
 }
 
-void NamedPipeServer::StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool writeThrough)
+void NamedPipeServer::StartServer(const std::string & name, ReplayFuncType reply, void* userData, bool messageModePipe, bool writeThrough)
 {
-    mImpl->StartServer(name, reply, userData, writeThrough);
+    mImpl->StartServer(name, reply, userData, messageModePipe, writeThrough);
 }
 
 bool NamedPipeServer::IsRunning()

@@ -15,7 +15,7 @@ public:
     NamedPipeServer();
     ~NamedPipeServer();
 
-    void StartServer(const std::string &name, ReplayFuncType reply, void* userData, bool writeThrough = false);
+    void StartServer(const std::string &name, ReplayFuncType reply, void* userData, bool messageModePipe = false, bool writeThrough = false);
     bool IsRunning();
     bool StopServer();
 

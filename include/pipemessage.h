@@ -23,6 +23,8 @@ namespace PipeDefine
         Pipe_S_Req_SuspendProcess,
         Pipe_S_Req_ResumeProcess,
         Pipe_S_Req_SetBreakCondition,
+
+        Pipe_Msg_Total,
     };
 
     struct Message
