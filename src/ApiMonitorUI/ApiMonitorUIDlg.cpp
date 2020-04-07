@@ -7,6 +7,8 @@
 #include "ApiMonitorUIDlg.h"
 #include "afxdialogex.h"
 #include "ApiMonitor.h"
+#include "CAddModuleFilterDlg.h"
+#include "uihelper.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -68,35 +70,6 @@ void CApiMonitorUIDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_LIST_API_LOGS, m_listApiCalls);
 }
 
-
-
-std::wstring CApiMonitorUIDlg::ToWString(const std::string & str)
-{
-    int sz = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, 0, 0);
-    std::vector<wchar_t> vec(sz + 1);
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, vec.data(), sz);
-    return std::wstring(vec.data());
-}
-
-CString CApiMonitorUIDlg::ToCString(const std::string & str)
-{
-#ifdef UNICODE
-    CString cs;
-    cs.GetBuffer(str.size() * 2);
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, cs.GetBuffer(), str.size() * 2);
-    return cs;
-#else
-    return str.c_str();
-#endif
-}
-
-CString CApiMonitorUIDlg::ToCString(long long i, bool hex)
-{
-    CString cs;
-    cs.Format((hex ? _T("0x%llx") : _T("%lld")), i);
-    return cs;
-}
-
 void CApiMonitorUIDlg::UpdateModuleList(void* pv)
 {
     SendMessage(WM_TREE_ADD_MODULE, (WPARAM)pv, 0);
@@ -152,7 +125,10 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
-    m_treeModuleList.ModifyStyle(NULL, TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS);
+    m_treeModuleList.GetTreeCtrl().ModifyStyle(NULL, TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS | TVS_CHECKBOXES);
+    m_treeModuleList.InsertColumn(0, _T("Module"), LVCFMT_LEFT, 200, -1);
+    m_treeModuleList.InsertColumn(1, _T("VA"),     LVCFMT_LEFT, 100, -1);
+    m_treeModuleList.InsertColumn(2, _T("Hook Count"),  LVCFMT_LEFT, 100, -1);
 
     SetTimer(ID_REFRESH_API_CALL_LOG_TIMER, 1000, NULL);
 
@@ -360,20 +336,36 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
 {
     ModuleInfoItem* mii = (ModuleInfoItem*)wParam;
 
-    HTREEITEM hRoot = m_treeModuleList.GetRootItem();
+    CAddModuleFilterDlg dlg(mii, this);
+    dlg.DoModal();
+
+    HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
     if (hRoot == NULL)
     {
-        hRoot = m_treeModuleList.InsertItem(_T("Modules"));
-        m_treeModuleList.Expand(hRoot, TVE_EXPAND);
+        hRoot = m_treeModuleList.GetTreeCtrl().InsertItem(_T("Modules"));
+        m_treeModuleList.GetTreeCtrl().Expand(hRoot, TVE_EXPAND);
     }
 
-    HTREEITEM hMod = m_treeModuleList.InsertItem(ToCString(mii->mName), NULL, NULL, hRoot);
+    HTREEITEM hMod = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(mii->mName), NULL, NULL, hRoot);
+    m_treeModuleList.SetItemText(hMod, 1, ToCString(mii->mBase, true));
+    int hookCount = 0;
     for (size_t i = 0; i < mii->mApis.size(); ++i)
     {
-        m_treeModuleList.InsertItem(ToCString(mii->mApis[i].mName), NULL, NULL, hMod);
+        std::string name = mii->mApis[i].mName;
+        if (mii->mApis[i].mIsForward)
+        {
+            name += "(-> ";
+            name += mii->mApis[i].mForwardto;
+            name += ")";
+        }
+        HTREEITEM hApi = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(name), NULL, NULL, hMod);
+        m_treeModuleList.SetItemText(hApi, 1, ToCString(mii->mApis[i].mVa, true));
+        m_treeModuleList.GetTreeCtrl().SetCheck(hApi, mii->mApis[i].mIsHook);
+        hookCount += (int)mii->mApis[i].mIsHook;
     }
-
-    m_treeModuleList.EnsureVisible(hMod);
+    m_treeModuleList.GetTreeCtrl().SetCheck(hMod, mii->mApis.size() == hookCount);
+    m_treeModuleList.SetItemText(hMod, 2, ToCString(hookCount));
+    m_treeModuleList.GetTreeCtrl().EnsureVisible(hMod);
     return 0;
 }
 
@@ -392,12 +384,18 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
     for (size_t i = totalCount; i < count; ++i)
     {
         m_ApiLogs[i].mIndex = i;
-        idx = m_listApiCalls.InsertItem(i, ToCString(m_ApiLogs[i].mIndex));
-        m_listApiCalls.SetItem(idx, 1, LVIF_TEXT, ToCString(m_ApiLogs[i].mTid), 0, 0, 0, 0);
-        m_listApiCalls.SetItem(idx, 2, LVIF_TEXT, ToCString(m_ApiLogs[i].mCallFrom, true), 0, 0, 0, 0);
+
+        CString index       = ToCString(m_ApiLogs[i].mIndex);
+        CString tid         = ToCString(m_ApiLogs[i].mTid);
+        CString call_from   = ToCString(m_ApiLogs[i].mCallFrom, true);
+        CString times       = ToCString(m_ApiLogs[i].mTimes);
+
+        idx = m_listApiCalls.InsertItem(i, index);
+        m_listApiCalls.SetItem(idx, 1, LVIF_TEXT, tid, 0, 0, 0, 0);
+        m_listApiCalls.SetItem(idx, 2, LVIF_TEXT, call_from, 0, 0, 0, 0);
         m_listApiCalls.SetItem(idx, 3, LVIF_TEXT, m_ApiLogs[i].mModuleNameW.c_str(), 0, 0, 0, 0);
         m_listApiCalls.SetItem(idx, 4, LVIF_TEXT, m_ApiLogs[i].mApiNameW.c_str(), 0, 0, 0, 0);
-        m_listApiCalls.SetItem(idx, 5, LVIF_TEXT, ToCString(m_ApiLogs[i].mTimes), 0, 0, 0, 0);
+        m_listApiCalls.SetItem(idx, 5, LVIF_TEXT, times, 0, 0, 0, 0);
     }
     m_listApiCalls.EnsureVisible(idx, TRUE);
 }
@@ -409,12 +407,12 @@ void CApiMonitorUIDlg::OnSize(UINT nType, int cx, int cy)
     RECT rc;
     rc.top = 50;
     rc.left = BORDER;
-    rc.right = cx / 3 - BORDER / 2;
+    rc.right = cx / 2 - BORDER / 2;
     rc.bottom = cy - BORDER;
     m_treeModuleList.SetWindowPos(NULL, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER);
 
     rc.top = 50;
-    rc.left = cx / 3 + BORDER / 2;
+    rc.left = cx / 2 + BORDER / 2;
     rc.right = cx - BORDER;
     rc.bottom = cy - BORDER;
     m_listApiCalls.SetWindowPos(NULL, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER);

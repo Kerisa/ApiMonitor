@@ -33,6 +33,15 @@
     <ClInclude Include="ApiMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="CAddModuleFilterDlg.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\uihelper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ColumnTreeCtrl.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ApiMonitorUI.cpp">
@@ -51,6 +60,15 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="..\..\include\pipemessage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CAddModuleFilterDlg.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\include\uihelper.cpp">
+      <Filter>头文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ColumnTreeCtrl.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

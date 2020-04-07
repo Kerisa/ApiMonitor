@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 #include "ApiMonitor.h"
+#include "ColumnTreeCtrl.h"
 
 class Monitor;
 class PipeController;
@@ -26,9 +27,6 @@ public:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV 支持
 
 public:
-    static CString ToCString(const std::string& str);
-    static CString ToCString(long long i, bool hex = false);
-    static std::wstring ToWString(const std::string & str);
     void UpdateModuleList(void* me);    // PipeController::ModuleEntry*
     void AppendApiCallLog(void* ai);    // PipeController::ApiLog*
 
@@ -40,7 +38,7 @@ public:
 protected:
 	HICON m_hIcon;
     CEdit m_editFilePath;
-    CTreeCtrl m_treeModuleList;
+    CColumnTreeCtrl  m_treeModuleList;
     CListCtrl m_listApiCalls;
 
     std::thread m_RunningMonitorThread;

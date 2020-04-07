@@ -204,10 +204,6 @@ public:
             Vlog("[PipeLine::Recv] pipe not ready.");
             return false;
         }
-        if (mReadThreadHandle == NULL || mStopWorkingThread)
-        {
-            ReadThread((LPVOID)1);
-        }
 
         Vlog("[PipeLine::Recv] try to receive a msg...");
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -227,7 +223,13 @@ public:
                 wait = false;
             }
             param->f_LeaveCriticalSection(&csRead);
-            param->f_Sleep(1);
+            if (wait)
+            {
+                if (mReadThreadHandle == NULL || mStopWorkingThread)
+                {
+                    ReadThread((LPVOID)1);
+                }
+            }
         }
         Vlog("[PipeLine::Recv] msg type: " << type << ", size: " << content.size());
         return true;
@@ -242,8 +244,8 @@ public:
         Vlog("[PipeLine::ReadThread] enter, run once: " << runOnce);
         do
         {
-            DWORD bytesRead = 0;
 RETRY_READ:
+            DWORD bytesRead = 0;
             BOOL ret = param->f_ReadFile(msPipe->mPipe, tmpBuffer.data() + partialMsgSize, tmpBuffer.size() - partialMsgSize, &bytesRead, NULL);
             if (!ret)
             {
