@@ -29,6 +29,7 @@ struct ApiLogItem
     std::wstring mModuleNameW;
     std::wstring mApiNameW;
     intptr_t     mCallFrom{ 0 };
+    intptr_t     mRawArgs[3]{ 0,0,0 };
     intptr_t     mTimes{ 0 };
     int          mTid{ 0 };
 };

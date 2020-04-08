@@ -245,11 +245,12 @@ namespace msg
 
     struct ApiInvoked
     {
-        Allocator::string module_name;
-        Allocator::string api_name;
-        long long         call_from{ 0 };
-        long              times{ 0 };
-        long              action{ 0 };
+        Allocator::string   module_name;
+        Allocator::string   api_name;
+        long long           call_from{ 0 };
+        unsigned long long  raw_args[3]{ 0,0,0 };
+        long                times{ 0 };
+        long                action{ 0 };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -258,6 +259,9 @@ namespace msg
             SerialItem(vec, module_name);
             SerialItem(vec, api_name);
             SerialItem(vec, call_from);
+            SerialItem(vec, raw_args[0]);
+            SerialItem(vec, raw_args[1]);
+            SerialItem(vec, raw_args[2]);
             SerialItem(vec, times);
             SerialItem(vec, action);
             CalFinalLength(vec);
@@ -269,6 +273,9 @@ namespace msg
             idx = ExtractItem(str, idx, module_name);
             idx = ExtractItem(str, idx, api_name);
             idx = ExtractItem(str, idx, call_from);
+            idx = ExtractItem(str, idx, raw_args[0]);
+            idx = ExtractItem(str, idx, raw_args[1]);
+            idx = ExtractItem(str, idx, raw_args[2]);
             idx = ExtractItem(str, idx, times);
             idx = ExtractItem(str, idx, action);
         }

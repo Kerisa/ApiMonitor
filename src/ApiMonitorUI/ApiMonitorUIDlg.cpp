@@ -140,6 +140,9 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
     m_listApiCalls.InsertColumn(3, _T("Module"),  LVCFMT_LEFT, 120, -1);
     m_listApiCalls.InsertColumn(4, _T("Name"),    LVCFMT_LEFT, 150, -1);
     m_listApiCalls.InsertColumn(5, _T("Count"),   LVCFMT_LEFT, 50,  -1);
+    m_listApiCalls.InsertColumn(6, _T("Arg0"),    LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(7, _T("Arg1"),    LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(8, _T("Arg2"),    LVCFMT_LEFT, 70,  -1);
 
     m_listApiCalls.Invalidate();
 
@@ -289,6 +292,9 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             al.mCallFrom = m.call_from;
             al.mTimes = m.times;
             al.mTid = msg->tid;
+            al.mRawArgs[0] = m.raw_args[0];
+            al.mRawArgs[1] = m.raw_args[1];
+            al.mRawArgs[2] = m.raw_args[2];
             dlg->AppendApiCallLog(&al);
             //printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), msg->tid, m.call_from, m.times);
             if (pc->mConditionReady)
@@ -392,6 +398,9 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
             CString tid         = ToCString(m_ApiLogs[i].mTid);
             CString call_from   = ToCString(m_ApiLogs[i].mCallFrom, true);
             CString times       = ToCString(m_ApiLogs[i].mTimes);
+            CString arg0        = ToCString(m_ApiLogs[i].mRawArgs[0], true);
+            CString arg1        = ToCString(m_ApiLogs[i].mRawArgs[1], true);
+            CString arg2        = ToCString(m_ApiLogs[i].mRawArgs[2], true);
 
             idx = m_listApiCalls.InsertItem(i, index);
             m_listApiCalls.SetItem(idx, 1, LVIF_TEXT, tid, 0, 0, 0, 0);
@@ -399,6 +408,9 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
             m_listApiCalls.SetItem(idx, 3, LVIF_TEXT, m_ApiLogs[i].mModuleNameW.c_str(), 0, 0, 0, 0);
             m_listApiCalls.SetItem(idx, 4, LVIF_TEXT, m_ApiLogs[i].mApiNameW.c_str(), 0, 0, 0, 0);
             m_listApiCalls.SetItem(idx, 5, LVIF_TEXT, times, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, 6, LVIF_TEXT, arg0, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, 7, LVIF_TEXT, arg1, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, 8, LVIF_TEXT, arg2, 0, 0, 0, 0);
         }
     }
     m_listApiCalls.EnsureVisible(idx, TRUE);

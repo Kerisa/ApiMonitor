@@ -383,8 +383,8 @@ public:
             long     mBreakReachInvokeTime{ 0 };
             LONG_PTR mBreakCallFromAddr{ 0 };
         };
-        static constexpr size_t ByteCodeLength = 32;
-        typedef void (__stdcall * FN_HookFunction)(uint32_t self_index, LONG_PTR call_from);
+        static constexpr size_t ByteCodeLength = 40;
+        typedef void (__stdcall * FN_HookFunction)(uint32_t self_index, ULONG_PTR addr_of_call_from_addr);
         uint32_t                mSelfIndex;
         char*                   mBytesCode;
         string                  mModuleName;
@@ -404,12 +404,13 @@ public:
             mFuncName.clear();
         }
     };
-    static void __stdcall CommonHookFunction(uint32_t self_index, LONG_PTR call_from)
+    static void __stdcall CommonHookFunction(uint32_t self_index, ULONG_PTR addr_of_call_from_addr)
     {
+        LPVOID call_from = *(LPVOID*)addr_of_call_from_addr;
         Entry* e = msEntries.GetEntry(self_index);
         Vlog("[HookEntries::CommonHookFunction] entry: " << e
             << ", func name: " << (e ? e->mFuncName.c_str() : "<idx error>")
-            << ", call from: " << (LPVOID)call_from << ", invoke time: " << (e ? e->mParams.mInvokeCount : -1) << ", flag: " << (e ? e->mParams.mFlag : -1));
+            << ", call from: " << call_from << ", invoke time: " << (e ? e->mParams.mInvokeCount : -1) << ", flag: " << (e ? e->mParams.mFlag : -1));
         
         if (e)
         {
@@ -419,7 +420,10 @@ public:
             msgApiInvoke.module_name = e->mModuleName.c_str();
             msgApiInvoke.api_name = e->mFuncName.c_str();
             msgApiInvoke.times = e->mParams.mInvokeCount;
-            msgApiInvoke.call_from = call_from;
+            msgApiInvoke.call_from = (long long)*(LPVOID*)addr_of_call_from_addr;
+            msgApiInvoke.raw_args[0] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 1);
+            msgApiInvoke.raw_args[1] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 2);
+            msgApiInvoke.raw_args[2] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 3);
             auto content = msgApiInvoke.Serial();
             PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
 
@@ -435,7 +439,7 @@ public:
                 Vlog("[CommonHookFunction] int 3(next)");
                 __asm int 3
             }
-            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == e->mParams.mBreakCallFromAddr)
+            if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == (LPVOID)e->mParams.mBreakCallFromAddr)
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 Vlog("[CommonHookFunction] int 3(addr)");
@@ -559,7 +563,9 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
         //
         // push edx
         // push ecx
-        // push dword ptr [esp+8]   ; <--- original return addr as call from addr
+        // mov ecx, esp             ; <--- original return addr as call from addr
+        // add ecx, 8
+        // push ecx
         // push entry_index
         // push continue_offset     ; <--- new return addr
         // push hook_func
@@ -572,23 +578,25 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
 
         e->mBytesCode[0] = '\x52';
         e->mBytesCode[1] = '\x51';
-        e->mBytesCode[2] = '\xff';
-        e->mBytesCode[3] = '\x74';
-        e->mBytesCode[4] = '\x24';
-        e->mBytesCode[5] = '\x08';
-        e->mBytesCode[6] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[7] = (ULONG_PTR)e->mSelfIndex;
-        e->mBytesCode[11] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[12] = (ULONG_PTR)&e->mBytesCode[22];
-        e->mBytesCode[16] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[17] = (ULONG_PTR)e->mHookFunction;
-        e->mBytesCode[21] = '\xc3';
-        e->mBytesCode[22] = '\x59';
-        e->mBytesCode[23] = '\x5a';
-        e->mBytesCode[24] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[25] = (ULONG_PTR)oldEntry;
-        e->mBytesCode[29] = '\xc3';
-        e->mBytesCode[30] = '\xcc';
+        e->mBytesCode[2] = '\x8b';
+        e->mBytesCode[3] = '\xcc';
+        e->mBytesCode[4] = '\x83';
+        e->mBytesCode[5] = '\xc1';
+        e->mBytesCode[6] = '\x08';
+        e->mBytesCode[7] = '\x51';
+        e->mBytesCode[8] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[9] = (ULONG_PTR)e->mSelfIndex;
+        e->mBytesCode[13] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[14] = (ULONG_PTR)&e->mBytesCode[24];
+        e->mBytesCode[18] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[19] = (ULONG_PTR)e->mHookFunction;
+        e->mBytesCode[23] = '\xc3';
+        e->mBytesCode[24] = '\x59';
+        e->mBytesCode[25] = '\x5a';
+        e->mBytesCode[26] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[27] = (ULONG_PTR)oldEntry;
+        e->mBytesCode[31] = '\xc3';
+        e->mBytesCode[32] = '\xcc';
     }
     else
     {
