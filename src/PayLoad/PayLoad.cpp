@@ -66,6 +66,15 @@ private:
     char mBuf[1024];
 };
 
+__declspec(naked) intptr_t GetCurThreadId()
+{
+    __asm {
+        mov eax,dword ptr fs:[00000018h]
+        mov eax,dword ptr [eax+24h]
+        ret
+    }
+}
+
 #define PRINT_DEBUG_LOG
 
 #ifdef PRINT_DEBUG_LOG
@@ -73,7 +82,7 @@ private:
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
         if (!param->f_OutputDebugStringA) break; \
         SStream ml; \
-        ml << " [" << param->dwProcessId << "." << param->f_GetCurrentThreadId() << "] " << cond << "\n"; \
+        ml << " [" << param->dwProcessId << "." << GetCurThreadId() << "] " << cond << "\n"; \
         param->f_OutputDebugStringA(ml.str()); \
       } while (0)
 #else
@@ -198,12 +207,11 @@ public:
             Vlog("[PipeLine::Send] pipe not ready.");
         }
 
-        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
         DWORD dummy = 0;
         std::vector<char, Allocator::allocator<char>> m(PipeDefine::Message::HeaderLength);
         PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
         ptr->type = type;
-        ptr->tid = param->f_GetCurrentThreadId();
+        ptr->tid = GetCurThreadId();
         ptr->ContentSize = content.size();
         m.insert(m.end(), content.begin(), content.end());
         Vlog("[PipeLine::Send] enqueue msg type: " << type << ", size: " << m.size());
@@ -229,8 +237,7 @@ public:
         }
 
         Vlog("[PipeLine::Recv] try to receive a msg...");
-        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-        const DWORD tid = param->f_GetCurrentThreadId();
+        const DWORD tid = GetCurThreadId();
         bool wait = true;
         while (wait)
         {
@@ -954,7 +961,6 @@ void GetApis(bool ntdllOnly)
     param->f_WaitNamedPipeA = (FN_WaitNamedPipeA)param->f_GetProcAddress((HMODULE)param->kernel32, "WaitNamedPipeA");
     param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
-    param->f_GetCurrentThreadId = (FN_GetCurrentThreadId)param->f_GetProcAddress((HMODULE)param->kernel32, "GetCurrentThreadId");
     param->f_Sleep = (FN_Sleep)param->f_GetProcAddress((HMODULE)param->kernel32, "Sleep");
 }
 
@@ -1032,8 +1038,8 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
 
         PipeDefine::msg::ModuleApis msgModuleApis;
         CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
-        //auto content = msgModuleApis.Serial();
-        //PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+        auto content = msgModuleApis.Serial();
+        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
 
         HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
 
@@ -1087,7 +1093,7 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         }
     }
 
-    Vlog("[HookLdrLoadDllPad] ret value: " << ret << ", base: " << *ModuleHandle);
+    Vlog("[HookLdrLoadDllPad] ret value: " << ret << ", name: " << string(ModuleFileName->Buffer, ModuleFileName->Buffer + ModuleFileName->Length) << ", base: " << *ModuleHandle);
     // for this new loaded dll
     if (ret == 0 && *ModuleHandle != param->kernel32 && *ModuleHandle != param->kernelBase)
     {

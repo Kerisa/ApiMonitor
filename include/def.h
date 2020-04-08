@@ -265,6 +265,5 @@ struct PARAM
     FN_WaitNamedPipeA            f_WaitNamedPipeA;
     FN_SetNamedPipeHandleState   f_SetNamedPipeHandleState;
     FN_GetLastError              f_GetLastError;
-    FN_GetCurrentThreadId        f_GetCurrentThreadId;
     FN_Sleep                     f_Sleep;
 };
