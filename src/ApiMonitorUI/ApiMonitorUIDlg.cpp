@@ -387,6 +387,8 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
     if (totalCount >= count)
         return;
 
+    bool autoScroll = totalCount == 0 || m_listApiCalls.IsItemVisible(totalCount - 1);
+
     int idx = 0;
     {
         std::unique_lock<std::mutex> lk(m_LogLock);
@@ -413,7 +415,8 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
             m_listApiCalls.SetItem(idx, 8, LVIF_TEXT, arg2, 0, 0, 0, 0);
         }
     }
-    m_listApiCalls.EnsureVisible(idx, TRUE);
+    if (autoScroll)
+        m_listApiCalls.EnsureVisible(idx, TRUE);
 }
 
 void CApiMonitorUIDlg::OnSize(UINT nType, int cx, int cy)
