@@ -71,6 +71,7 @@ private:
 #ifdef PRINT_DEBUG_LOG
     #define Vlog(cond) do { \
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR; \
+        if (!param->f_OutputDebugStringA) break; \
         SStream ml; \
         ml << " [" << param->dwProcessId << "." << param->f_GetCurrentThreadId() << "] " << cond << "\n"; \
         param->f_OutputDebugStringA(ml.str()); \
@@ -93,11 +94,32 @@ public:
     MsgStream*          mMsgWriteBuffer{ nullptr };
     CRITICAL_SECTION    csRead;
     CRITICAL_SECTION    csWrite;
-    HANDLE              mPipe;
-    HANDLE              mReadThreadHandle;
-    HANDLE              mWriteThreadHandle;
+    HANDLE              mPipe{ INVALID_HANDLE_VALUE };
+    HANDLE              mReadThreadHandle{ NULL };
+    HANDLE              mWriteThreadHandle{ NULL };
     bool                mStopWorkingThread{ false };
+    bool                mThreadLockInited{ false };
 
+    struct Lock
+    {
+        Lock(CRITICAL_SECTION* pcs, bool use)
+        {
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            mUse = use;
+            mCS = pcs;
+            if (use)
+                param->f_RtlEnterCriticalSection(pcs);
+        }
+        ~Lock()
+        {
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            if (mUse)
+                param->f_RtlLeaveCriticalSection(mCS);
+        }
+
+        bool mUse{ false };
+        CRITICAL_SECTION* mCS{ nullptr };
+    };
 
     PipeLine()
     {
@@ -105,9 +127,6 @@ public:
         new (mMsgReadBuffer) ThreadMsgMap();
         mMsgWriteBuffer = (MsgStream*)Allocator::Malloc(sizeof(MsgStream));
         new (mMsgWriteBuffer) MsgStream();
-        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-        param->f_InitializeCriticalSection(&csRead);
-        param->f_InitializeCriticalSection(&csWrite);
         mWriteThreadHandle = NULL;
         mReadThreadHandle = NULL;
     }
@@ -152,28 +171,31 @@ public:
     bool CreateWorkThread()
     {
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_RtlInitializeCriticalSection(&csRead);
+        param->f_RtlInitializeCriticalSection(&csWrite);
         mWriteThreadHandle = param->f_CreateThread(0, 0, WriteThread, 0, 0, 0);
         mReadThreadHandle = param->f_CreateThread(0, 0, ReadThread, 0, 0, 0);
         Vlog("[PipeLine::CreateWorkThread] read-thread: " << mReadThreadHandle << ", write-thread: " << mWriteThreadHandle);
+        mThreadLockInited = true;
         return true;
     }
 
     void StopWorkingThread()
     {
         mStopWorkingThread = true;
-
-        CloseHandle(mWriteThreadHandle);
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        param->f_CloseHandle(mWriteThreadHandle);
+        param->f_CloseHandle(mReadThreadHandle);
         mWriteThreadHandle = NULL;
-        CloseHandle(mReadThreadHandle);
         mReadThreadHandle = NULL;
     }
 
     bool Send(PipeDefine::PipeMsg type, const std::vector<char, Allocator::allocator<char>> & content)
     {
+        // 尚未建立连接时将数据放在缓冲区中等待发送
         if (mPipe == INVALID_HANDLE_VALUE)
         {
             Vlog("[PipeLine::Send] pipe not ready.");
-            return false;
         }
 
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
@@ -186,9 +208,10 @@ public:
         m.insert(m.end(), content.begin(), content.end());
         Vlog("[PipeLine::Send] enqueue msg type: " << type << ", size: " << m.size());
 
-        param->f_EnterCriticalSection(&csWrite);
-        mMsgWriteBuffer->insert(mMsgWriteBuffer->end(), m.begin(), m.end());
-        param->f_LeaveCriticalSection(&csWrite);
+        {
+            Lock lk(&csWrite, mThreadLockInited);
+            mMsgWriteBuffer->insert(mMsgWriteBuffer->end(), m.begin(), m.end());
+        }
 
         if (mWriteThreadHandle == NULL || mStopWorkingThread)
         {
@@ -211,18 +234,20 @@ public:
         bool wait = true;
         while (wait)
         {
-            param->f_EnterCriticalSection(&csRead);
-            ThreadMsgList& msgL = (*mMsgReadBuffer)[tid];
-            if (!msgL.empty())
             {
-                MsgStream& m = msgL.front();
-                PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
-                type = ptr->type;
-                content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
-                msgL.pop_front();
-                wait = false;
+                Lock lk(&csRead, mThreadLockInited);
+                ThreadMsgList& msgL = (*mMsgReadBuffer)[tid];
+                if (!msgL.empty())
+                {
+                    MsgStream& m = msgL.front();
+                    PipeDefine::Message* ptr = (PipeDefine::Message*)m.data();
+                    type = ptr->type;
+                    content.assign(ptr->Content, ptr->Content + ptr->ContentSize);
+                    msgL.pop_front();
+                    wait = false;
+                }
             }
-            param->f_LeaveCriticalSection(&csRead);
+
             if (wait)
             {
                 if (mReadThreadHandle == NULL || mStopWorkingThread)
@@ -283,10 +308,11 @@ RETRY_READ:
                 if (ptr->tid != -1)
                 {
                     Vlog("[PipeLine::ReadThread] enqueue msg: " << ptr->type << ", length: " << ptr->ContentSize);
-                    param->f_EnterCriticalSection(&msPipe->csRead);
-                    ThreadMsgList& msgV = (*msPipe->mMsgReadBuffer)[ptr->tid];
-                    msgV.push_back(MsgStream((char*)ptr, (char*)ptr + ptr->ContentSize + PipeDefine::Message::HeaderLength));
-                    param->f_LeaveCriticalSection(&msPipe->csRead);
+                    {
+                        Lock lk(&msPipe->csRead, msPipe->mThreadLockInited);
+                        ThreadMsgList& msgV = (*msPipe->mMsgReadBuffer)[ptr->tid];
+                        msgV.push_back(MsgStream((char*)ptr, (char*)ptr + ptr->ContentSize + PipeDefine::Message::HeaderLength));
+                    }
                 }
                 else
                 {
@@ -317,13 +343,14 @@ RETRY_READ:
 
             if (!msPipe->mMsgWriteBuffer->empty())
             {
-                param->f_EnterCriticalSection(&msPipe->csWrite);
-                DWORD dummy = 0;
-                BOOL ret = param->f_WriteFile(msPipe->mPipe, msPipe->mMsgWriteBuffer->data(), msPipe->mMsgWriteBuffer->size(), &dummy, NULL);
-                if (!ret)
-                    Vlog("[PipeLine::WriteThread] result: " << ret << ", bytes written: " << dummy << ", err: " << param->f_GetLastError());
-                msPipe->mMsgWriteBuffer->clear();
-                param->f_LeaveCriticalSection(&msPipe->csWrite);
+                {
+                    Lock lk(&msPipe->csRead, msPipe->mThreadLockInited);
+                    DWORD dummy = 0;
+                    BOOL ret = param->f_WriteFile(msPipe->mPipe, msPipe->mMsgWriteBuffer->data(), msPipe->mMsgWriteBuffer->size(), &dummy, NULL);
+                    if (!ret)
+                        Vlog("[PipeLine::WriteThread] result: " << ret << ", bytes written: " << dummy << ", err: " << param->f_GetLastError());
+                    msPipe->mMsgWriteBuffer->clear();
+                }
             }
             param->f_Sleep(1);
         } while (!runOnce && !msPipe->mStopWorkingThread);
@@ -594,7 +621,11 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
 
     // 创建虚拟导出表
     Vlog("[HookModuleExportTable] create new export table");
-    PIMAGE_EXPORT_DIRECTORY imEDNew = (PIMAGE_EXPORT_DIRECTORY)param->f_VirtualAlloc(0, pExportSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    __declspec(align(16)) SIZE_T RegionSize = pExportSize;
+    __declspec(align(16)) LPVOID BaseAddress = 0;
+    param->f_NtAllocateVirtualMemory(NtCurrentProcess(), &BaseAddress, 0, &RegionSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+    PIMAGE_EXPORT_DIRECTORY imEDNew = (PIMAGE_EXPORT_DIRECTORY)BaseAddress;
     memcpy_s(imEDNew, pExportSize, imED, pExportSize);
     DWORD delta = (char*)imEDNew - (char*)imED;
     imEDNew->AddressOfFunctions    += delta;
@@ -607,8 +638,10 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
         newFunc[i] += delta;
     }
 
-    DWORD oldProtect = 0;
-    param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), PAGE_READWRITE, &oldProtect);
+    __declspec(align(16)) DWORD  oldProtect1 = 0;
+    __declspec(align(16)) LPVOID baseAddr1 = oldFunc;
+    __declspec(align(16)) ULONG  sizeToProtect1 = imEDNew->NumberOfFunctions * sizeof(DWORD);
+    param->f_NtProtectVirtualMemory(NtCurrentProcess(), &baseAddr1, &sizeToProtect1, PAGE_READWRITE, &oldProtect1);
 
     Vlog("[HookModuleExportTable] replace exdisting export table, count: " << imED->NumberOfFunctions);
     char tmpFuncNameBuffer[32] = { 0 };
@@ -653,15 +686,24 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
         }
     }
 
-    DWORD oldProtect2 = 0;
-    param->f_VirtualProtect(&imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress, sizeof(DWORD), PAGE_READWRITE, &oldProtect2);
+    __declspec(align(16)) DWORD  oldProtect2 = 0;
+    __declspec(align(16)) LPVOID baseAddr2 = &imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    __declspec(align(16)) ULONG  sizeToProtect2 = sizeof(DWORD);
+    param->f_NtProtectVirtualMemory(NtCurrentProcess(), &baseAddr2, &sizeToProtect2, PAGE_READWRITE, &oldProtect2);
     imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress = (DWORD)imEDNew - (DWORD)lpImage;
     if (oldProtect2 != 0)
-        param->f_VirtualProtect(&imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress, sizeof(DWORD), oldProtect2, &oldProtect2);
-
+    {
+        baseAddr2 = &imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+        sizeToProtect2 = sizeof(DWORD);
+        param->f_NtProtectVirtualMemory(NtCurrentProcess(), &baseAddr2, &sizeToProtect2, oldProtect2, &oldProtect2);
+    }
     Vlog("[HookModuleExportTable] finish");
-    if (oldProtect != 0)
-        param->f_VirtualProtect(oldFunc, imEDNew->NumberOfFunctions * sizeof(DWORD), oldProtect, &oldProtect);
+    if (oldProtect1 != 0)
+    {
+        LPVOID baseAddr1 = oldFunc;
+        ULONG  sizeToProtect1 = imEDNew->NumberOfFunctions * sizeof(DWORD);
+        param->f_NtProtectVirtualMemory(NtCurrentProcess(), &baseAddr1, &sizeToProtect1, oldProtect1, &oldProtect1);
+    }
 }
 
 void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::msg::ModuleApis& msgModuleApis)
@@ -864,14 +906,33 @@ void GetModules()
     param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)hKernel, "GetProcAddress");
 }
 
-void GetApis()
+void GetApis(bool ntdllOnly)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+#define GET_NTDLL_API(fn) do { \
+        if (!param->f_ ## fn) \
+            param->f_ ## fn = (FN_ ## fn)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, # fn); \
+        if (!param->f_ ## fn) \
+            throw; \
+    } while (0)
+
+    GET_NTDLL_API(NtSuspendProcess);
+    GET_NTDLL_API(NtResumeProcess);
+    GET_NTDLL_API(NtAllocateVirtualMemory);
+    GET_NTDLL_API(RtlCreateHeap);
+    GET_NTDLL_API(RtlAllocateHeap);
+    GET_NTDLL_API(RtlFreeHeap);
+    GET_NTDLL_API(NtProtectVirtualMemory);
+    GET_NTDLL_API(RtlInitializeCriticalSection);
+    GET_NTDLL_API(RtlEnterCriticalSection);
+    GET_NTDLL_API(RtlLeaveCriticalSection);
+
+    if (ntdllOnly)
+        return;
+
     if (!param->f_GetProcAddress)
         param->f_GetProcAddress = (FN_GetProcAddress)MiniGetFunctionAddress((ULONG_PTR)param->kernelBase, "GetProcAddress");
-
-    param->f_NtSuspendProcess = (FN_NtSuspendProcess)param->f_GetProcAddress((HMODULE)param->ntdllBase, "NtSuspendProcess");
-    param->f_NtResumeProcess = (FN_NtResumeProcess)param->f_GetProcAddress((HMODULE)param->ntdllBase, "NtResumeProcess");
 
     param->f_GetModuleHandleA = (FN_GetModuleHandleA)param->f_GetProcAddress((HMODULE)param->kernelBase, "GetModuleHandleA");
     param->f_OpenThread = (FN_OpenThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "OpenThread");
@@ -881,16 +942,11 @@ void GetApis()
     param->f_CloseHandle = (FN_CloseHandle)param->f_GetProcAddress((HMODULE)param->kernelBase, "CloseHandle");
     param->f_CreateThread = (FN_CreateThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "CreateThread");
     param->f_OutputDebugStringA = (FN_OutputDebugStringA)param->f_GetProcAddress((HMODULE)param->kernelBase, "OutputDebugStringA");
-    param->f_VirtualAlloc = (FN_VirtualAlloc)param->f_GetProcAddress((HMODULE)param->kernelBase, "VirtualAlloc");
-    param->f_VirtualProtect = (FN_VirtualProtect)param->f_GetProcAddress((HMODULE)param->kernelBase, "VirtualProtect");
 
     param->kernel32 = (LPVOID)param->f_GetModuleHandleA("kernel32.dll");
     param->f_CreateToolhelp32Snapshot = (FN_CreateToolhelp32Snapshot)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateToolhelp32Snapshot");
     param->f_Module32First = (FN_Module32First)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32First");
     param->f_Module32Next = (FN_Module32Next)param->f_GetProcAddress((HMODULE)param->kernel32, "Module32Next");
-    param->f_HeapCreate = (FN_HeapCreate)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapCreate");
-    param->f_HeapAlloc = (FN_HeapAlloc)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapAlloc");
-    param->f_HeapFree = (FN_HeapFree)param->f_GetProcAddress((HMODULE)param->kernel32, "HeapFree");
     param->f_GetProcessHeap = (FN_GetProcessHeap)param->f_GetProcAddress((HMODULE)param->kernel32, "GetProcessHeap");
     param->f_CreateFileA = (FN_CreateFileA)param->f_GetProcAddress((HMODULE)param->kernel32, "CreateFileA");
     param->f_ReadFile = (FN_ReadFile)param->f_GetProcAddress((HMODULE)param->kernel32, "ReadFile");
@@ -899,18 +955,19 @@ void GetApis()
     param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
     param->f_GetCurrentThreadId = (FN_GetCurrentThreadId)param->f_GetProcAddress((HMODULE)param->kernel32, "GetCurrentThreadId");
-    param->f_InitializeCriticalSection = (FN_InitializeCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "InitializeCriticalSection");
-    param->f_EnterCriticalSection = (FN_EnterCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "EnterCriticalSection");
-    param->f_LeaveCriticalSection = (FN_LeaveCriticalSection)param->f_GetProcAddress((HMODULE)param->kernel32, "LeaveCriticalSection");
     param->f_Sleep = (FN_Sleep)param->f_GetProcAddress((HMODULE)param->kernel32, "Sleep");
 }
 
-void BuildPipe()
+void BuildPipe(bool connect)
 {
-    Vlog("[BuildPipe] enter.");
-    PipeLine::msPipe = (PipeLine*)Allocator::Malloc(sizeof(PipeLine));
-    new (PipeLine::msPipe) PipeLine();
-    PipeLine::msPipe->ConnectServer();
+    Vlog("[BuildPipe] enter. connect: " << connect);
+    if (!PipeLine::msPipe)
+    {
+        PipeLine::msPipe = (PipeLine*)Allocator::Malloc(sizeof(PipeLine));
+        new (PipeLine::msPipe) PipeLine();
+    }
+    if (connect)
+        PipeLine::msPipe->ConnectServer();
     Vlog("[BuildPipe] exit.");
 }
 
@@ -967,6 +1024,22 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     NTSTATUS ret = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
 
+    if (!param->bNtdllInited)
+    {
+        GetApis(true);
+        Allocator::InitAllocator();
+        BuildPipe(false);
+
+        PipeDefine::msg::ModuleApis msgModuleApis;
+        CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
+        //auto content = msgModuleApis.Serial();
+        //PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+
+        HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
+
+        param->bNtdllInited = true;
+    }
+
     if (!param->kernelBase)
     {
         wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
@@ -989,17 +1062,15 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
         param->kernel32 = (LPVOID)hKernel;
     }
-    if (!param->bInited && param->kernel32 && param->kernelBase)
+    if (!param->bOthersInited && param->kernel32 && param->kernelBase)
     {
-        GetApis();
-        Allocator::InitAllocator();
-        BuildPipe();
-        param->bInited = true;
+        GetApis(false);
+        BuildPipe(true);
+        param->bOthersInited = true;
 
-        // 三巨头
-        const int preLoadCount = 3;
-        HMODULE preLoadAddr[preLoadCount] = { (HMODULE)param->ntdllBase, (HMODULE)param->kernelBase, (HMODULE)param->kernel32 };
-        const char* preLoadName[preLoadCount] = { "ntdll.dll", "kernelbase.dll", "kernel32.dll" };
+        const int preLoadCount = 2;
+        HMODULE preLoadAddr[preLoadCount] = { (HMODULE)param->kernelBase, (HMODULE)param->kernel32 };
+        const char* preLoadName[preLoadCount] = { "kernelbase.dll", "kernel32.dll" };
         for (int i = 0; i < preLoadCount; ++i)
         {
             PipeDefine::msg::ModuleApis msgModuleApis;

@@ -4,11 +4,32 @@
 #include <Windows.h>
 #include <tlhelp32.h>
 
+#define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
+
 typedef VOID (NTAPI * FN_LdrInitializeThunk)(
     ULONG Unknown1,
     ULONG Unknown2,
     ULONG Unknown3,
     ULONG Unknown4);
+
+typedef LONG (NTAPI * PRTL_HEAP_COMMIT_ROUTINE)(
+    IN PVOID Base,
+    IN OUT PVOID *CommitAddress,
+    IN OUT PSIZE_T CommitSize);
+
+typedef struct _RTL_HEAP_PARAMETERS {
+    ULONG Length;
+    SIZE_T SegmentReserve;
+    SIZE_T SegmentCommit;
+    SIZE_T DeCommitFreeBlockThreshold;
+    SIZE_T DeCommitTotalFreeThreshold;
+    SIZE_T MaximumAllocationSize;
+    SIZE_T VirtualMemoryThreshold;
+    SIZE_T InitialCommit;
+    SIZE_T InitialReserve;
+    PRTL_HEAP_COMMIT_ROUTINE CommitRoutine;
+    SIZE_T Reserved[2];
+} RTL_HEAP_PARAMETERS, *PRTL_HEAP_PARAMETERS;
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
@@ -27,6 +48,48 @@ typedef LONG (NTAPI *FN_NtSuspendProcess)(
 
 typedef LONG (NTAPI *FN_NtResumeProcess)(
     HANDLE ProcessHandle);
+
+typedef LONG (NTAPI * FN_NtAllocateVirtualMemory)(
+    HANDLE    ProcessHandle,
+    PVOID     *BaseAddress,
+    ULONG_PTR ZeroBits,
+    PSIZE_T   RegionSize,
+    ULONG     AllocationType,
+    ULONG     Protect);
+
+typedef PVOID (NTAPI * FN_RtlCreateHeap)(
+    ULONG                Flags,
+    PVOID                HeapBase,
+    SIZE_T               ReserveSize,
+    SIZE_T               CommitSize,
+    PVOID                Lock,
+    PRTL_HEAP_PARAMETERS Parameters);
+
+typedef PVOID (NTAPI * FN_RtlAllocateHeap)(
+    PVOID  HeapHandle,
+    ULONG  Flags,
+    SIZE_T Size);
+
+typedef LONG (NTAPI * FN_RtlFreeHeap)(
+    PVOID HeapHandle,
+    ULONG Flags,
+    PVOID BaseAddress);
+
+typedef LONG (NTAPI * FN_NtProtectVirtualMemory)(
+    HANDLE ProcessHandle,
+    PVOID  *BaseAddress,
+    PULONG NumberOfBytesToProtect,
+    ULONG  NewAccessProtection,
+    PULONG OldAccessProtection);
+
+typedef void (WINAPI * FN_RtlInitializeCriticalSection)(
+    RTL_CRITICAL_SECTION* lpCriticalSection);
+
+typedef LONG(WINAPI * FN_RtlEnterCriticalSection)(
+    RTL_CRITICAL_SECTION* lpCriticalSection);
+
+typedef void (WINAPI * FN_RtlLeaveCriticalSection)(
+    RTL_CRITICAL_SECTION* lpCriticalSection);
 
 typedef FARPROC(WINAPI * FN_GetProcAddress)(
     HMODULE hModule,
@@ -148,15 +211,6 @@ typedef DWORD (WINAPI * FN_GetLastError)();
 
 typedef DWORD (WINAPI * FN_GetCurrentThreadId)();
 
-typedef void (WINAPI * FN_InitializeCriticalSection)(
-    LPCRITICAL_SECTION lpCriticalSection);
-
-typedef void (WINAPI * FN_EnterCriticalSection)(
-    LPCRITICAL_SECTION lpCriticalSection);
-
-typedef void (WINAPI * FN_LeaveCriticalSection)(
-    LPCRITICAL_SECTION lpCriticalSection);
-
 typedef void (WINAPI * FN_Sleep)(DWORD dwMilliseconds);
 
 struct PARAM
@@ -172,13 +226,22 @@ struct PARAM
     HANDLE NormalHeapHandle;
     HANDLE ExecuteHeapHandle;
 
-    bool  bInited;
+    bool  bNtdllInited;
+    bool  bOthersInited;
 
     // ntdll
-    FN_LdrInitializeThunk        f_LdrInitializeThunk;
-    FN_LdrLoadDll                f_LdrLoadDll;
-    FN_NtSuspendProcess          f_NtSuspendProcess;
-    FN_NtResumeProcess           f_NtResumeProcess;
+    FN_LdrInitializeThunk           f_LdrInitializeThunk;
+    FN_LdrLoadDll                   f_LdrLoadDll;
+    FN_NtSuspendProcess             f_NtSuspendProcess;
+    FN_NtResumeProcess              f_NtResumeProcess;
+    FN_NtAllocateVirtualMemory      f_NtAllocateVirtualMemory;
+    FN_RtlCreateHeap                f_RtlCreateHeap;
+    FN_RtlAllocateHeap              f_RtlAllocateHeap;
+    FN_RtlFreeHeap                  f_RtlFreeHeap;
+    FN_NtProtectVirtualMemory       f_NtProtectVirtualMemory;
+    FN_RtlInitializeCriticalSection f_RtlInitializeCriticalSection;
+    FN_RtlEnterCriticalSection      f_RtlEnterCriticalSection;
+    FN_RtlLeaveCriticalSection      f_RtlLeaveCriticalSection;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;
@@ -190,16 +253,11 @@ struct PARAM
     FN_CloseHandle               f_CloseHandle;
     FN_CreateThread              f_CreateThread;
     FN_OutputDebugStringA        f_OutputDebugStringA;
-    FN_VirtualAlloc              f_VirtualAlloc;
-    FN_VirtualProtect            f_VirtualProtect;
 
     // kernel32
     FN_CreateToolhelp32Snapshot  f_CreateToolhelp32Snapshot;
     FN_Module32First             f_Module32First;
     FN_Module32Next              f_Module32Next;
-    FN_HeapCreate                f_HeapCreate;
-    FN_HeapAlloc                 f_HeapAlloc;
-    FN_HeapFree                  f_HeapFree;
     FN_GetProcessHeap            f_GetProcessHeap;
     FN_CreateFileA               f_CreateFileA;
     FN_ReadFile                  f_ReadFile;
@@ -208,8 +266,5 @@ struct PARAM
     FN_SetNamedPipeHandleState   f_SetNamedPipeHandleState;
     FN_GetLastError              f_GetLastError;
     FN_GetCurrentThreadId        f_GetCurrentThreadId;
-    FN_InitializeCriticalSection f_InitializeCriticalSection;
-    FN_EnterCriticalSection      f_EnterCriticalSection;
-    FN_LeaveCriticalSection      f_LeaveCriticalSection;
     FN_Sleep                     f_Sleep;
 };

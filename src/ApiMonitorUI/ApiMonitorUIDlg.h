@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include <mutex>
 #include <thread>
 #include <vector>
 #include "ApiMonitor.h"
@@ -33,6 +34,7 @@ public:
     Monitor*                m_Monitor;
     PipeController*         m_Controller;
     std::vector<ApiLogItem> m_ApiLogs;
+    std::mutex              m_LogLock;
 
 // 实现
 protected:
