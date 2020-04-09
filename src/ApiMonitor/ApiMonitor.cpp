@@ -55,7 +55,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     ULONG_PTR entry = (ULONG_PTR)GetProcAddress(hDll2, "Entry");
     HANDLE hDll = CreateFile(dllPath, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hDll == INVALID_HANDLE_VALUE)
-        return NULL;    
+        return NULL;
     std::vector<char> file(GetFileSize(hDll, 0));
     SIZE_T R;
     ReadFile(hDll, file.data(), file.size(), &R, 0);
@@ -83,6 +83,9 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
     PVOID oep = (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
 
+    
+    ///////////////////////////////////////////////////////////////////////////
+    // 拦截 LdrLoadDll
 
     HMODULE ntDllBase = GetModuleHandleA("ntdll.dll");
     auto pLdrLoadDll = (FN_LdrLoadDll)GetProcAddress(ntDllBase, "LdrLoadDll");
@@ -105,7 +108,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
             }
         }
     }
-    assert(found);
+    assert(found && "launch space not found");
     if (found)
     {
         char jmp[2];
@@ -119,6 +122,66 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         *(PDWORD)&jmp2[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
         jmp2[5] = '\xc3';
         WriteProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100 + position), jmp2, sizeof(jmp2), &R);
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////
+    // 拦截 LdrxCallInitRoutine(调用 _DllMainCRTStartup)
+    {
+        PIMAGE_NT_HEADERS ntDllNtHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)ntDllBase + ((PIMAGE_DOS_HEADER)ntDllBase)->e_lfanew);
+        PIMAGE_SECTION_HEADER ntDllSecHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)ntDllNtHeader + sizeof(IMAGE_NT_HEADERS));
+        DWORD ntDllSecHeaderBegin = ntDllSecHeader->VirtualAddress;
+        //
+        // ff7514   push    dword ptr[ebp + 14h]
+        // ff7510   push    dword ptr[ebp + 10h]
+        // ff750c   push    dword ptr[ebp + 0Ch]
+        // ff5508   call    dword ptr[ebp + 8]
+        //
+        char pattern[] = "\xff\x75\x14\xff\x75\x10\xff\x75\x0c\xff\x55\x08";
+        char pattern2[] = "\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc";
+        void* addrFound = nullptr;
+        void* pad       = nullptr;
+        for (DWORD i = 0; i < ntDllNtHeader->FileHeader.NumberOfSections; ++i)
+        {
+            if (strncmp((char*)ntDllSecHeader->Name, ".text", 8))
+            {
+                ++ntDllSecHeader;
+                continue;
+            }
+
+            for (int k = 0; k < ntDllSecHeader->Misc.VirtualSize; ++k)
+            {
+                if (!memcmp((char*)((ULONG_PTR)ntDllBase + ntDllSecHeader->VirtualAddress + k), pattern, sizeof(pattern) - 1))
+                {
+                    addrFound = (char*)((ULONG_PTR)ntDllBase + ntDllSecHeader->VirtualAddress + k);
+                    break;
+                }
+            }
+            break;
+        }
+        assert(addrFound && "_DllMainCRTStartup caller not found");
+        for (char* i = (char*)addrFound; i > (char*)addrFound - 128; --i)
+        {
+            if (!memcmp(i, pattern2, sizeof(pattern2) - 1))
+            {
+                pad = i;
+                break;
+            }
+        }
+        assert(pad && "launch address not found 2");
+        char jmp1[3] = { '\xeb', '\x90', '\x90' };
+        ULONG_PTR callInstrAddr = (ULONG_PTR)addrFound + 9;
+        ULONG_PTR retAddr = callInstrAddr + 2;
+        jmp1[1] = (char)(0x100 - (retAddr - (ULONG_PTR)pad));
+        WriteProcessMemory(hProcess, (char*)callInstrAddr, jmp1, sizeof(jmp1), &R);
+        auto hook = GetProcAddress(hDll2, "DllMainCRTStartupPad");
+        char jmp2[11] = { 0 };
+        jmp2[0] = '\x68';
+        *(PDWORD)&jmp2[1] = (DWORD)retAddr;
+        jmp2[5] = '\x68';
+        *(PDWORD)&jmp2[6] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+        jmp2[10] = '\xc3';
+        WriteProcessMemory(hProcess, pad, jmp2, sizeof(jmp2), &R);
     }
 
     FreeLibrary(hDll2);

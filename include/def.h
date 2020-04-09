@@ -91,6 +91,10 @@ typedef LONG(WINAPI * FN_RtlEnterCriticalSection)(
 typedef void (WINAPI * FN_RtlLeaveCriticalSection)(
     RTL_CRITICAL_SECTION* lpCriticalSection);
 
+typedef LONG (NTAPI * FN_LdrGetDllFullName)(
+    PVOID DllHandle,
+    PUNICODE_STRING FullDllName);
+
 typedef FARPROC(WINAPI * FN_GetProcAddress)(
     HMODULE hModule,
     LPCSTR  lpProcName);
@@ -242,6 +246,7 @@ struct PARAM
     FN_RtlInitializeCriticalSection f_RtlInitializeCriticalSection;
     FN_RtlEnterCriticalSection      f_RtlEnterCriticalSection;
     FN_RtlLeaveCriticalSection      f_RtlLeaveCriticalSection;
+    FN_LdrGetDllFullName            f_LdrGetDllFullName;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;

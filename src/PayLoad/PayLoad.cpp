@@ -348,10 +348,10 @@ RETRY_READ:
                 return 1;
             }
 
-            if (!msPipe->mMsgWriteBuffer->empty())
             {
+                Lock lk(&msPipe->csRead, msPipe->mThreadLockInited);
+                if (!msPipe->mMsgWriteBuffer->empty())
                 {
-                    Lock lk(&msPipe->csRead, msPipe->mThreadLockInited);
                     DWORD dummy = 0;
                     BOOL ret = param->f_WriteFile(msPipe->mPipe, msPipe->mMsgWriteBuffer->data(), msPipe->mMsgWriteBuffer->size(), &dummy, NULL);
                     if (!ret)
@@ -942,6 +942,7 @@ void GetApis(bool ntdllOnly)
     GET_NTDLL_API(RtlInitializeCriticalSection);
     GET_NTDLL_API(RtlEnterCriticalSection);
     GET_NTDLL_API(RtlLeaveCriticalSection);
+    GET_NTDLL_API(LdrGetDllFullName);
 
     if (ntdllOnly)
         return;
@@ -1033,27 +1034,29 @@ void ContinueExe()
     while (1) {}
 }
 
-NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
+void InitNtdllApiAndEnv()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    NTSTATUS ret = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
+    if (param->bNtdllInited)
+        return;
 
-    if (!param->bNtdllInited)
-    {
-        GetApis(true);
-        Allocator::InitAllocator();
-        BuildPipe(false);
+    GetApis(true);
+    Allocator::InitAllocator();
+    BuildPipe(false);
 
-        PipeDefine::msg::ModuleApis msgModuleApis;
-        CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
-        auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+    PipeDefine::msg::ModuleApis msgModuleApis;
+    CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
+    auto content = msgModuleApis.Serial();
+    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
 
-        HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
+    HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
 
-        param->bNtdllInited = true;
-    }
+    param->bNtdllInited = true;
+}
 
+void InitKernelDllAndEnv()
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     if (!param->kernelBase)
     {
         wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
@@ -1100,6 +1103,15 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
             HookModuleExportTable(preLoadAddr[i], preLoadName[i], preLoadName[i]);
         }
     }
+}
+
+NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    NTSTATUS ret = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
+
+    InitNtdllApiAndEnv();
+    InitKernelDllAndEnv();
 
     Vlog("[HookLdrLoadDllPad] ret value: " << ret << ", name: " << string(ModuleFileName->Buffer, ModuleFileName->Buffer + ModuleFileName->Length) << ", base: " << *ModuleHandle);
     // for this new loaded dll
@@ -1126,6 +1138,50 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         Vlog("[HookLdrLoadDllPad] skip.");
     }
     return ret;
+}
+
+void DllMainCRTStartupPadSub(HINSTANCE instance)
+{
+    // 会先被调用到，在 LdrLoaddll 初始化前直接返回
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    if (!param->bNtdllInited)
+        return;
+
+    wchar_t wBuffer[512] = { '$' };
+    UNICODE_STRING wsName;
+    wsName.MaximumLength = sizeof(wBuffer);
+    wsName.Buffer = wBuffer;
+    wsName.Length = 0;
+    param->f_LdrGetDllFullName(instance, &wsName);
+    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
+    Vlog("[DllMainCRTStartupPad] dll: " << moduleName.c_str() << ", base: " << (LPVOID)instance);
+    PipeDefine::msg::ModuleApis msgModuleApis;
+    CollectModuleInfo((HMODULE)instance, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
+
+    auto content = msgModuleApis.Serial();
+    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+    PipeDefine::PipeMsg recv_type;
+    content.clear();
+    PipeLine::msPipe->Recv(recv_type, content);
+    PipeDefine::msg::ApiFilter filter;
+    filter.Unserial(content);
+    Vlog("[DllMainCRTStartupPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+
+    HookModuleExportTable((HMODULE)instance, moduleName.c_str(), moduleName.c_str());
+}
+
+typedef BOOL(WINAPI * FN_DllMainCRTStartup)(HINSTANCE instance, DWORD reason, LPVOID reserved);
+
+__declspec(naked) BOOL WINAPI DllMainCRTStartupPad(FN_DllMainCRTStartup pDllMainCRTStartup, HINSTANCE instance, DWORD reason, LPVOID reserved)
+{
+    if (reason == DLL_PROCESS_ATTACH)
+    {
+        DllMainCRTStartupPadSub(instance);
+    }
+
+    __asm {
+        jmp pDllMainCRTStartup
+    }
 }
 
 void Entry()

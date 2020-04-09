@@ -1,3 +1,4 @@
 EXPORTS
 	Entry
 	HookLdrLoadDllPad
+	DllMainCRTStartupPad
