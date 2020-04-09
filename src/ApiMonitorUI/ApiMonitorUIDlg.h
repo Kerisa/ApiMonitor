@@ -47,6 +47,9 @@ protected:
 
 	// 生成的消息映射函数
 	virtual BOOL OnInitDialog();
+    virtual void OnOK() {}
+    virtual void OnCancel() {}
+
 	DECLARE_MESSAGE_MAP()
 public:
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
