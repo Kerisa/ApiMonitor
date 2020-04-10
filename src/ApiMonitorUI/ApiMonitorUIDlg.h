@@ -45,8 +45,6 @@ protected:
     CColumnTreeCtrl             m_treeModuleList;
     CListCtrl                   m_listApiCalls;
 
-    DllFilterConfig             m_Config;
-
     std::thread                 m_RunningMonitorThread;
 
 	// 生成的消息映射函数

@@ -30,8 +30,10 @@ protected:
     CEdit           m_editBase;
     CListCtrl       m_listModuleApis;
     CButton         m_checkAll;
+    CButton         m_checkSaveToConfig;
 
     ModuleInfoItem* mModuleInfoItem{ nullptr };
+
 
 public:
     afx_msg void OnPaint();

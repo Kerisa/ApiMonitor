@@ -9,6 +9,7 @@
 using namespace std;
 
 
+DllFilterConfig* DllFilterConfig::msConfig;
 
 const CString& DllFilterConfig::GetConfigPath()
 {
@@ -18,7 +19,7 @@ const CString& DllFilterConfig::GetConfigPath()
         GetModuleFileName(0, buffer, sizeof(buffer));
         CString selfPath = buffer;
         CString selfDir = selfPath.Mid(0, selfPath.ReverseFind(_T('\\')));
-        mConfigPath = selfDir + _T("\\config.ini");
+        mConfigPath = selfDir + _T("\\config.json");
     }
     return mConfigPath;
 }
@@ -98,26 +99,43 @@ void DllFilterConfig::SaveToFile()
 
 void DllFilterConfig::UpdateApi(const CString & _dllName, const CString & _apiName, Status s)
 {
-    if (s != kHook && s != kIgnore)
-        throw "invalid status";
-
     string dllName = ToStdString(_dllName);
     string apiName = ToStdString(_apiName);
+    UpdateApi(dllName, apiName, s);
+}
+
+void DllFilterConfig::UpdateApi(const std::string & dllName, const std::string & apiName, Status s)
+{
+    if (s != kHook && s != kIgnore)
+        throw "invalid status";
 
     auto& mDetail = mModules[dllName];
     auto& aDetail = mDetail.mApis[apiName];
     aDetail.mHook = s == kHook;
 }
 
-DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const CString& _dllName, const CString& _apiName)
+DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const std::string& dllPath, const std::string& apiName)
 {
-    string dllName = ToStdString(_dllName);
-    string apiName = ToStdString(_apiName);
-    auto it = mModules.find(dllName);
+    auto it = mModules.find(dllPath);
     if (it == mModules.end())
         return kNotDefine;
     auto itt = it->second.mApis.find(apiName);
     if (itt == it->second.mApis.end())
         return kNotDefine;
     return itt->second.mHook ? kHook : kIgnore;
+}
+
+size_t DllFilterConfig::GetModuleApiCountInConfig(const std::string & dllPath) const
+{
+    auto it = mModules.find(dllPath);
+    if (it == mModules.end())
+        return 0;
+    return it->second.mApis.size();
+}
+
+DllFilterConfig * DllFilterConfig::GetConfig()
+{
+    if (!msConfig)
+        msConfig = new DllFilterConfig();
+    return msConfig;
 }

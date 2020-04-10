@@ -161,7 +161,7 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
 
     m_editFilePath.SetWindowText(L"C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\TestExe.exe");
 
-    if (!m_Config.LoadFromFile())
+    if (!DllFilterConfig::GetConfig()->LoadFromFile())
     {
         AfxMessageBox(_T("config not exist or invalid"));
     }
@@ -354,9 +354,21 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
 {
     ModuleInfoItem* mii = (ModuleInfoItem*)wParam;
 
-    CAddModuleFilterDlg dlg(mii, this);
-    dlg.DoModal();
-
+    // 配置中的 api 数量与实际数量相同时应用配置里的设置
+    if (DllFilterConfig::GetConfig()->GetModuleApiCountInConfig(mii->mPath) == mii->mApis.size())
+    {
+        for (size_t i = 0; i < mii->mApis.size(); ++i)
+        {
+            auto s = DllFilterConfig::GetConfig()->GetApiHookStatus(mii->mPath, mii->mApis[i].mName);
+            ASSERT(s == DllFilterConfig::kHook || s == DllFilterConfig::kIgnore);
+            mii->mApis[i].mIsHook = (s == DllFilterConfig::kHook);
+        }
+    }
+    else
+    {
+        CAddModuleFilterDlg dlg(mii, this);
+        dlg.DoModal();
+    }
     m_Modules.push_back(*mii);
 
     HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
@@ -468,7 +480,9 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
         FindClose(hFind);
     }
     CFileDialog dlg(FALSE, _T("txt"), exePath + _T("_result"));
-    dlg.DoModal();
+    if (IDOK != dlg.DoModal())
+        return;
+
     CString savePath = dlg.GetPathName();
 
     HANDLE hSave = CreateFile(savePath, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -484,7 +498,7 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
            << std::hex << tmpModule[i].mBase << "\n";
         for (size_t k = 0; k < tmpModule[i].mApis.size(); ++k)
         {
-            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " " << tmpModule[i].mApis[k].mName;
+            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " [" << (tmpModule[i].mApis[k].mIsHook ? "+" : "-") << "] " << tmpModule[i].mApis[k].mName;
             if (tmpModule[i].mApis[k].mIsForward)
                 ss << "--> " << tmpModule[i].mApis[k].mForwardto;
             else
@@ -503,7 +517,7 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
     }
 
     sstream_t ss;
-    ss << "\n\nApi Logs\n-------------------------------\n";
+    ss << "\n\nApi Call Logs\n-------------------------------\n";
     for (size_t i = 0; i < tmpLog.size(); ++i)
     {
         ss << "No." << std::setw(5) << std::setfill('0') << tmpLog[i].mIndex << " Tid: " << tmpLog[i].mTid << ", RetAddr: " << std::hex << tmpLog[i].mCallFrom
@@ -535,5 +549,5 @@ void CApiMonitorUIDlg::OnFileExit()
 
 void CApiMonitorUIDlg::OnOptionConfig()
 {
-    ShellExecute(0, _T("open"), _T("notepad.exe"), m_Config.GetConfigPath(), m_Config.GetConfigDir(), SW_NORMAL);
+    ShellExecute(0, _T("open"), _T("notepad.exe"), DllFilterConfig::GetConfig()->GetConfigPath(), DllFilterConfig::GetConfig()->GetConfigDir(), SW_NORMAL);
 }

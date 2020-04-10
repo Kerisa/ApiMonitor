@@ -18,8 +18,12 @@ public:
     CString         GetConfigDir();
     bool            LoadFromFile();
     void            SaveToFile();
-    void            UpdateApi(const CString& dllName, const CString& apiName, Status s);
-    Status          GetApiHookStatus(const CString& dllName, const CString& apiName);
+    void            UpdateApi(const CString& dllPath, const CString& apiName, Status s);
+    void            UpdateApi(const std::string& dllPath, const std::string& apiName, Status s);
+    Status          GetApiHookStatus(const std::string& dllPath, const std::string& apiName);
+    size_t          GetModuleApiCountInConfig(const std::string& dllPath) const;
+
+    static DllFilterConfig* GetConfig();
 
 private:
     struct ApiDetail
@@ -34,4 +38,6 @@ private:
 
     std::map<std::string, ModuleDetail>     mModules;
     CString                                 mConfigPath;
+
+    static DllFilterConfig* msConfig;
 };

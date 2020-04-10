@@ -7,6 +7,7 @@
 #include "afxdialogex.h"
 #include "ApiMonitor.h"
 #include "uihelper.h"
+#include "config.h"
 
 // CAddModuleFilterDlg 对话框
 
@@ -31,6 +32,7 @@ void CAddModuleFilterDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_EDIT_NAME, m_editName);
     DDX_Control(pDX, IDC_EDIT_PATH, m_editPath);
     DDX_Control(pDX, IDC_EDIT_BASE, m_editBase);
+    DDX_Control(pDX, IDC_CHECK_SAVE_TO_CONFIG, m_checkSaveToConfig);
 }
 
 
@@ -137,14 +139,23 @@ HCURSOR CAddModuleFilterDlg::OnQueryDragIcon()
 
 void CAddModuleFilterDlg::OnOK()
 {
-    CDialogEx::OnOK();
     ASSERT(m_listModuleApis.GetItemCount() == mModuleInfoItem->mApis.size());
+    bool save = m_checkSaveToConfig.GetCheck();
     for (int i = 0; i < mModuleInfoItem->mApis.size(); ++i)
     {
         bool checked = ListView_GetCheckState(m_listModuleApis, i);
         mModuleInfoItem->mApis[i].mIsHook = checked;
+        if (save)
+        {
+            DllFilterConfig::GetConfig()->UpdateApi(mModuleInfoItem->mPath, mModuleInfoItem->mApis[i].mName,
+                checked ? DllFilterConfig::kHook : DllFilterConfig::kIgnore);
+        }
     }
-    int k = 0;
+    if (save)
+    {
+        DllFilterConfig::GetConfig()->SaveToFile();
+    }
+    CDialogEx::OnOK();
 }
 
 
@@ -168,3 +179,4 @@ void CAddModuleFilterDlg::OnBnClickedCheckAll()
 
     UpdateData(FALSE);
 }
+
