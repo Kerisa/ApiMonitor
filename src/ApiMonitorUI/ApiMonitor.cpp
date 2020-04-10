@@ -243,13 +243,13 @@ int Monitor::LoadFile(const std::wstring& filePath)
     //MessageBoxA(0, "will resume.", 0, 0);
     //auto res = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtResumeProcess");
     //res(pi.hProcess);
-    MessageBoxA(0, "break when \"OutputDebugStringA\" called.", 0, 0);
+    //MessageBoxA(0, "break when \"OutputDebugStringA\" called.", 0, 0);
 
-    PipeDefine::msg::SetBreakCondition* cond = mControllerRef->Lock();
-    cond->func_addr = mControllerRef->outputdbgstr;
-    cond->break_next_time = true;
-    mControllerRef->UnLock();
-    mControllerRef->mConditionReady = true;
+    //PipeDefine::msg::SetBreakCondition* cond = mControllerRef->Lock();
+    //cond->func_addr = mControllerRef->outputdbgstr;
+    //cond->break_next_time = true;
+    //mControllerRef->UnLock();
+    //mControllerRef->mConditionReady = true;
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
