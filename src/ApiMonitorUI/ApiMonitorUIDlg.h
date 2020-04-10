@@ -8,6 +8,7 @@
 #include <vector>
 #include "ApiMonitor.h"
 #include "ColumnTreeCtrl.h"
+#include "config.h"
 
 class Monitor;
 class PipeController;
@@ -31,19 +32,22 @@ public:
     void UpdateModuleList(void* me);    // PipeController::ModuleEntry*
     void AppendApiCallLog(void* ai);    // PipeController::ApiLog*
 
-    Monitor*                m_Monitor;
-    PipeController*         m_Controller;
-    std::vector<ApiLogItem> m_ApiLogs;
-    std::mutex              m_LogLock;
+    Monitor*                    m_Monitor;
+    PipeController*             m_Controller;
+    std::vector<ApiLogItem>     m_ApiLogs;
+    std::mutex                  m_LogLock;
+    std::vector<ModuleInfoItem> m_Modules;
 
 // 实现
 protected:
-	HICON m_hIcon;
-    CEdit m_editFilePath;
-    CColumnTreeCtrl  m_treeModuleList;
-    CListCtrl m_listApiCalls;
+	HICON                       m_hIcon;
+    CEdit                       m_editFilePath;
+    CColumnTreeCtrl             m_treeModuleList;
+    CListCtrl                   m_listApiCalls;
 
-    std::thread m_RunningMonitorThread;
+    DllFilterConfig             m_Config;
+
+    std::thread                 m_RunningMonitorThread;
 
 	// 生成的消息映射函数
 	virtual BOOL OnInitDialog();
@@ -59,4 +63,8 @@ public:
     afx_msg LRESULT OnTreeListAddModule(WPARAM wParam, LPARAM lParam);
     afx_msg void OnTimer(UINT nIDEvent);
     afx_msg void OnSize(UINT nType, int cx, int cy);
+    afx_msg void OnBnClickedButtonExport();
+    afx_msg void OnClose();
+    afx_msg void OnFileExit();
+    afx_msg void OnOptionConfig();
 };

@@ -3,6 +3,8 @@
 //
 
 #include "stdafx.h"
+#include <iomanip>
+#include <sstream>
 #include "ApiMonitorUI.h"
 #include "ApiMonitorUIDlg.h"
 #include "afxdialogex.h"
@@ -92,6 +94,10 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_MESSAGE(WM_TREE_ADD_MODULE, &CApiMonitorUIDlg::OnTreeListAddModule)
     ON_WM_TIMER()
     ON_WM_SIZE()
+    ON_BN_CLICKED(IDC_BUTTON_EXPORT, &CApiMonitorUIDlg::OnBnClickedButtonExport)
+    ON_WM_CLOSE()
+    ON_COMMAND(ID_FILE_EXIT, &CApiMonitorUIDlg::OnFileExit)
+    ON_COMMAND(ID_OPTION_CONFIG, &CApiMonitorUIDlg::OnOptionConfig)
 END_MESSAGE_MAP()
 
 
@@ -154,6 +160,11 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
     m_Monitor->SetPipeHandler(m_Controller);
 
     m_editFilePath.SetWindowText(L"C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\TestExe.exe");
+
+    if (!m_Config.LoadFromFile())
+    {
+        AfxMessageBox(_T("config not exist or invalid"));
+    }
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -346,6 +357,8 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     CAddModuleFilterDlg dlg(mii, this);
     dlg.DoModal();
 
+    m_Modules.push_back(*mii);
+
     HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
     if (hRoot == NULL)
     {
@@ -435,4 +448,92 @@ void CApiMonitorUIDlg::OnSize(UINT nType, int cx, int cy)
     rc.right = cx - BORDER;
     rc.bottom = cy - BORDER;
     m_listApiCalls.SetWindowPos(NULL, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER);
+}
+
+typedef std::stringstream sstream_t;
+
+void CApiMonitorUIDlg::OnBnClickedButtonExport()
+{
+    CString exePath;
+    m_editFilePath.GetWindowText(exePath);
+    WIN32_FIND_DATA wfd;
+    HANDLE hFind = FindFirstFile(exePath, &wfd);
+    if (hFind == NULL)
+    {
+        exePath = _T("noname");
+    }
+    else
+    {
+        exePath = wfd.cFileName;
+        FindClose(hFind);
+    }
+    CFileDialog dlg(FALSE, _T("txt"), exePath + _T("_result"));
+    dlg.DoModal();
+    CString savePath = dlg.GetPathName();
+
+    HANDLE hSave = CreateFile(savePath, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (hSave == INVALID_HANDLE_VALUE)
+        return;
+
+    DWORD R;
+    std::vector<ModuleInfoItem> tmpModule = m_Modules;
+    for (size_t i = 0; i < tmpModule.size(); ++i)
+    {
+        sstream_t ss;
+        ss << "Module\n-------------------------------\nName: " << tmpModule[i].mName << ", Path: " << tmpModule[i].mPath << ", Base: "
+           << std::hex << tmpModule[i].mBase << "\n";
+        for (size_t k = 0; k < tmpModule[i].mApis.size(); ++k)
+        {
+            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " " << tmpModule[i].mApis[k].mName;
+            if (tmpModule[i].mApis[k].mIsForward)
+                ss << "--> " << tmpModule[i].mApis[k].mForwardto;
+            else
+                ss << ", VA: " << tmpModule[i].mApis[k].mVa << ", DataExport: " << (tmpModule[i].mApis[k].mIsDataExport ? "Yes" : "No");
+            ss << "\n";
+        }
+        ss << "\n";
+        auto s = ss.str();
+        WriteFile(hSave, s.c_str(), s.size(), &R, 0);
+    }
+    
+    std::vector<ApiLogItem> tmpLog;
+    {
+        std::unique_lock<std::mutex> lk(m_LogLock);
+        tmpLog = m_ApiLogs;
+    }
+
+    sstream_t ss;
+    ss << "\n\nApi Logs\n-------------------------------\n";
+    for (size_t i = 0; i < tmpLog.size(); ++i)
+    {
+        ss << "No." << std::setw(5) << std::setfill('0') << tmpLog[i].mIndex << " Tid: " << tmpLog[i].mTid << ", RetAddr: " << std::hex << tmpLog[i].mCallFrom
+            << ", Module: " << tmpLog[i].mModuleName << " Name: " << tmpLog[i].mApiName << ", Count: " << tmpLog[i].mTimes;
+        for (size_t k = 0; k < _countof(tmpLog[i].mRawArgs); ++k)
+        {
+            ss << ", Arg" << k << ": " << std::hex << tmpLog[i].mRawArgs[k];
+        }
+        ss << "\n";
+    }
+    auto s = ss.str();
+    WriteFile(hSave, s.c_str(), s.size(), &R, 0);
+    CloseHandle(hSave);
+    AfxMessageBox(_T("Save Succees."), MB_ICONINFORMATION);
+}
+
+
+void CApiMonitorUIDlg::OnClose()
+{
+    CDialogEx::OnCancel();
+}
+
+
+void CApiMonitorUIDlg::OnFileExit()
+{
+    OnClose();
+}
+
+
+void CApiMonitorUIDlg::OnOptionConfig()
+{
+    ShellExecute(0, _T("open"), _T("notepad.exe"), m_Config.GetConfigPath(), m_Config.GetConfigDir(), SW_NORMAL);
 }

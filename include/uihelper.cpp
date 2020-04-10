@@ -24,6 +24,18 @@ CString ToCString(const std::string & str)
 #endif
 }
 
+std::string ToStdString(const CString & str)
+{
+#ifdef UNICODE
+    int sz = WideCharToMultiByte(CP_ACP, 0, str.GetString(), -1, 0, 0, 0, 0);
+    std::vector<char> vec(sz + 1);
+    WideCharToMultiByte(CP_ACP, 0, str.GetString(), -1, vec.data(), vec.size(), 0, 0);
+    return std::string(vec.data());
+#else
+    return str.GetString();
+#endif
+}
+
 CString ToCString(long long i, bool hex)
 {
     CString cs;
