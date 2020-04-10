@@ -1,0 +1,123 @@
+
+#include "stdafx.h"
+#include <fstream>
+#include <string>
+#include "json/json.h"
+#include "config.h"
+#include "uihelper.h"
+
+using namespace std;
+
+
+
+const CString& DllFilterConfig::GetConfigPath()
+{
+    if (mConfigPath.IsEmpty())
+    {
+        TCHAR buffer[512];
+        GetModuleFileName(0, buffer, sizeof(buffer));
+        CString selfPath = buffer;
+        CString selfDir = selfPath.Mid(0, selfPath.ReverseFind(_T('\\')));
+        mConfigPath = selfDir + _T("\\config.ini");
+    }
+    return mConfigPath;
+}
+
+CString DllFilterConfig::GetConfigDir()
+{
+    const CString& p = GetConfigPath();
+    return p.Mid(0, p.ReverseFind(_T('\\')));
+}
+
+bool DllFilterConfig::LoadFromFile()
+{
+    ifstream f(ToStdString(GetConfigPath()), ios::binary);
+    f.seekg(0, ios::end);
+    vector<char> data(f.tellg());
+    if (data.size() == 0)
+        return false;
+    f.seekg(0, ios::beg);
+    f.read(data.data(), data.size());
+    f.close();
+
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(data.data(), root))
+        return false;
+
+    mModules.clear();
+    for (Json::ArrayIndex i = 0; i < root.size(); ++i)
+    {
+        Json::Value& e = root[i];
+        string dllPath = e["Path"].asCString();
+
+        ModuleDetail md;
+        Json::Value& jApi = e["Api"];
+        for (Json::ArrayIndex k = 0; k < jApi.size(); ++k)
+        {
+            string apiName = jApi[k]["Name"].asCString();
+            ApiDetail ad;
+            ad.mHook = jApi[k]["Hook"].asBool();
+            auto result = md.mApis.insert(make_pair(apiName, ad));
+            if (!result.second)
+                throw "duplicate api name";
+        }
+        
+        auto result = mModules.insert(make_pair(dllPath, md));
+        if (!result.second)
+            throw "duplicate module path";
+    }
+    return true;
+}
+
+void DllFilterConfig::SaveToFile()
+{
+    Json::Value root;
+    for (auto it = mModules.begin(); it != mModules.end(); ++it)
+    {
+        Json::Value module;
+        module["Path"] = it->first;
+        Json::Value apis;
+        for (auto itt = it->second.mApis.begin(); itt != it->second.mApis.end(); ++itt)
+        {
+            Json::Value detail;
+            detail["Name"] = itt->first;
+            detail["Hook"] = itt->second.mHook;
+            apis.append(detail);
+        }
+        module["Api"] = apis;
+        root.append(module);
+    }
+
+    Json::FastWriter writer;
+    string s = writer.write(root);
+    ofstream f(ToStdString(GetConfigPath()), ios::binary);
+    f.write(s.c_str(), s.size());
+    f.close();
+}
+
+void DllFilterConfig::UpdateApi(const CString & _dllName, const CString & _apiName, Status s)
+{
+    if (s != kHook && s != kIgnore)
+        throw "invalid status";
+
+    string dllName = ToStdString(_dllName);
+    string apiName = ToStdString(_apiName);
+
+    auto& mDetail = mModules[dllName];
+    auto& aDetail = mDetail.mApis[apiName];
+    aDetail.mHook = s == kHook;
+}
+
+DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const CString& _dllName, const CString& _apiName)
+{
+    string dllName = ToStdString(_dllName);
+    string apiName = ToStdString(_apiName);
+    auto it = mModules.find(dllName);
+    if (it == mModules.end())
+        return kNotDefine;
+    auto itt = it->second.mApis.find(apiName);
+    if (itt == it->second.mApis.end())
+        return kNotDefine;
+    return itt->second.mHook ? kHook : kIgnore;
+}
