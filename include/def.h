@@ -95,6 +95,10 @@ typedef LONG (NTAPI * FN_LdrGetDllFullName)(
     PVOID DllHandle,
     PUNICODE_STRING FullDllName);
 
+typedef LONG (NTAPI * FN_NtDelayExecution)(
+    BOOLEAN              Alertable,
+    PLARGE_INTEGER       Interval);
+
 typedef FARPROC(WINAPI * FN_GetProcAddress)(
     HMODULE hModule,
     LPCSTR  lpProcName);
@@ -249,6 +253,8 @@ struct PARAM
     FN_RtlEnterCriticalSection      f_RtlEnterCriticalSection;
     FN_RtlLeaveCriticalSection      f_RtlLeaveCriticalSection;
     FN_LdrGetDllFullName            f_LdrGetDllFullName;
+    FN_NtDelayExecution             f_NtDelayExecution;
+    //FN_NtQueryInformationFile       f_NtQueryInformationFile;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;

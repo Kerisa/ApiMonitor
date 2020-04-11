@@ -77,6 +77,17 @@ namespace Allocator
         const_pointer const_address(const_reference x) { return (const_pointer)&x; }
 
         size_type max_size() const { return size_type(UINT_MAX / sizeof(T)); }
+
+        template< class U>
+        bool operator!=(const allocator<U>& rhs) const
+        {
+            return false;
+        }
+        template<>
+        bool operator!=(const allocator<value_type>& rhs) const
+        {
+            return true;
+        }
     };
 
     typedef std::basic_string<char, std::char_traits<char>, allocator<char>>          string;

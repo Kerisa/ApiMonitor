@@ -3,6 +3,7 @@
 #include <list>
 #include <map>
 #include <vector>
+#include <set>
 #include <Windows.h>
 #include "def.h"
 #include "allocator.h"
@@ -12,6 +13,7 @@
 using Allocator::string;
 
 PARAM* g_Param;
+
 
 class SStream
 {
@@ -74,6 +76,103 @@ __declspec(naked) intptr_t GetCurThreadId()
         ret
     }
 }
+
+bool IsMemoryReadable(LPVOID addr)
+{
+    __try
+    {
+        char c = *(char*)addr;
+        return true;
+    }
+    __except (1)
+    {
+        return false;
+    }
+}
+
+string GetDllNameFromExportDirectory(HMODULE hmod)
+{
+    const char* lpImage = (const char*)hmod;
+    PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
+    PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
+    DWORD exportRVA = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    PIMAGE_EXPORT_DIRECTORY imED = (PIMAGE_EXPORT_DIRECTORY)(lpImage + exportRVA);
+    long pExportSize = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
+    if (pExportSize == 0 || !IsMemoryReadable(imED) || imED->Characteristics != 0 || imED->MajorVersion != 0 || imED->MinorVersion != 0)
+        return "";
+    else
+        return lpImage + imED->Name;
+}
+
+class HookManager
+{
+    std::set<LPVOID, std::less<LPVOID>, Allocator::allocator<LPVOID>> mHookedModule;
+    std::set<intptr_t, std::less<intptr_t>, Allocator::allocator<intptr_t>> mTempStopHookThread;
+    LPVOID mLock{ 0 };
+
+    void Lock()
+    {
+        PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+        __declspec(align(16)) LARGE_INTEGER li;
+        li.QuadPart = -10000;    // 1ms
+        while (_InlineInterlockedExchangePointer(&mLock, (LPVOID)TRUE) == (LPVOID)TRUE)
+            param->f_NtDelayExecution(FALSE, &li);
+    }
+
+    void ReleaseLock()
+    {
+        _InlineInterlockedExchangePointer(&mLock, FALSE);
+    }
+
+public:
+    bool AppendHookedModule(HMODULE hmod)
+    {
+        Lock();
+        auto result = mHookedModule.insert(hmod);        
+        ReleaseLock();
+        return result.second;
+    }
+
+    void RemoveHookedModule(HMODULE hmod)
+    {
+        Lock();
+        mHookedModule.erase(hmod);
+        ReleaseLock();
+    }
+
+    bool IsModuleAlreadyHooked(HMODULE hmod)
+    {
+        Lock();
+        bool b = (mHookedModule.find(hmod) != mHookedModule.end());
+        ReleaseLock();
+        return b;
+    }
+
+    void StopHookForThread(intptr_t tid)
+    {
+        Lock();
+        auto result = mTempStopHookThread.insert(tid);
+        ReleaseLock();
+    }
+
+    bool IsThreadAlreadyStoppedHook(intptr_t tid)
+    {
+        Lock();
+        bool b = (mTempStopHookThread.find(tid) != mTempStopHookThread.end());
+        ReleaseLock();
+        return b;
+    }
+
+    void ResumeHookForThread(intptr_t tid)
+    {
+        Lock();
+        mTempStopHookThread.erase(tid);
+        ReleaseLock();
+    }
+};
+
+HookManager* g_HookManager;
+
 
 #define PRINT_DEBUG_LOG
 
@@ -485,20 +584,6 @@ private:
 HookEntries HookEntries::msEntries;
 
 
-bool IsMemoryReadable(LPVOID addr)
-{
-    __try
-    {
-        char c = *(char*)addr;
-        return true;
-    }
-    __except (1)
-    {
-        return false;
-    }
-}
-
-
 void ProcessCmd(const PipeDefine::Message* msg)
 {
     Vlog("[ProcessCmd] server cmd: " << msg->type);
@@ -545,7 +630,7 @@ void ProcessCmd(const PipeDefine::Message* msg)
 }
 
 
-ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
+ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
@@ -554,7 +639,7 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
         Vlog("[AddHookRoutine] add new entry failed, skip");
         return 0;
     }
-    e->mModuleName = modname;
+    e->mModuleName.assign(modname);
     e->mFuncName = funcName;
     e->mOriginalVA = (ULONG_PTR)hmod + (ULONG_PTR)*(PDWORD)oldRvaPtr;    
 
@@ -617,7 +702,44 @@ ULONG_PTR AddHookRoutine(const char* modname, HMODULE hmod, PVOID oldEntry, PVOI
     return newRva;
 }
 
-void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpath)
+void CheckDataExportOrForwardApi(bool& dataExp, bool& forwardApi, DWORD rvafunc, PIMAGE_DATA_DIRECTORY exportDir, PIMAGE_NT_HEADERS imNH, const char* lpImage)
+{
+    dataExp = false;
+    forwardApi = false;
+    int nsec = imNH->FileHeader.NumberOfSections;
+    PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)(imNH + 1);
+    // 判断是否为转向函数导出
+    if (!(rvafunc >= exportDir->VirtualAddress && rvafunc < (exportDir->VirtualAddress + exportDir->Size)))
+    {
+        // 如果不是转向函数则遍历整个区段判断是否为数据导出。
+        // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
+        BOOL isDataExport = TRUE;
+        PIMAGE_SECTION_HEADER ishcur;
+        for (int j = 0; j < nsec; ++j)
+        {
+            ishcur = ish + j;
+            if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
+            {
+                if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+                {
+                    isDataExport = FALSE;
+                    break;
+                }
+            }
+        }
+        if (isDataExport)
+            Vlog("dataApi: -");
+        dataExp = !!isDataExport;
+    }
+    else
+    {
+        // 是转向函数，设定转向信息
+        Vlog("redirectApi: " << lpImage + rvafunc);
+        forwardApi = true;
+    }
+}
+
+void HookModuleExportTable(HMODULE hmod, const string& modname, const string& modpath)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
 
@@ -648,9 +770,9 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
     imEDNew->AddressOfNameOrdinals += delta;
     PDWORD oldFunc = (PDWORD)(lpImage + imED->AddressOfFunctions);
     PDWORD newFunc = (PDWORD)(lpImage + imEDNew->AddressOfFunctions);
-    for (DWORD i = 0; i < imED->NumberOfFunctions; ++i)
+    for (DWORD i = 0; i < imED->NumberOfNames; ++i)
     {
-        newFunc[i] += delta;
+        ((PDWORD)(lpImage + imEDNew->AddressOfNames))[i] += delta;
     }
 
     __declspec(align(16)) DWORD  oldProtect1 = 0;
@@ -667,6 +789,7 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
         if (oldFunc[i] >= exportRVA && oldFunc[i] < exportRVA + pExportSize)
         {
             Vlog("[HookModuleExportTable] skip forword function: " << (lpImage + oldFunc[i]));
+            newFunc[i] += delta;
             continue;
         }
 
@@ -684,6 +807,15 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
         {
             sprintf_s(tmpFuncNameBuffer, sizeof(tmpFuncNameBuffer), "<ordinal %d>", i + imED->Base);
             funcName = tmpFuncNameBuffer;
+        }
+
+        bool dataExp = false;
+        bool forwardApi = false;
+        CheckDataExportOrForwardApi(dataExp, forwardApi, oldFunc[i], &imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT], imNH, lpImage);
+        if (dataExp || forwardApi)
+        {
+            Vlog("[HookModuleExportTable] skip forward api or data api, name: " << funcName << ", data: " << dataExp << ", forward: " << forwardApi);
+            continue;
         }
 
         if (strcmp(funcName, "LdrLoadDll"))
@@ -721,12 +853,12 @@ void HookModuleExportTable(HMODULE hmod, const char* modname, const char* modpat
     }
 }
 
-void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, PipeDefine::msg::ModuleApis& msgModuleApis)
+void CollectModuleInfo(HMODULE hmod, const string& modname, const string& modpath, PipeDefine::msg::ModuleApis& msgModuleApis)
 {
     Vlog("[CollectModuleInfo] enter.");
 
-    msgModuleApis.module_name = modname;
-    msgModuleApis.module_path = modpath;
+    msgModuleApis.module_name.assign(modname);
+    msgModuleApis.module_path.assign(modpath);
     msgModuleApis.module_base = (long long)hmod;
 
     const char* lpImage = (const char*)hmod;
@@ -740,6 +872,7 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
         Vlog("[CollectModuleInfo] export table empty or bad address, size: " << pExportSize << ", va: " << imED);
         return;
     }
+
     // 存在导出表
     if (imED->NumberOfFunctions <= 0)
     {
@@ -775,35 +908,7 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
 
         bool dataExp = false;
         bool forwardApi = false;
-        // 判断是否为转向函数导出
-        if (!(rvafunc >= exportRVA && rvafunc < (exportRVA + pExportSize)))
-        {
-            // 如果不是转向函数则遍历整个区段判断是否为数据导出。
-            // 由于是通过区段属性判断因此并非完全准确，但大部分情况下是准确的
-            BOOL isDataExport = TRUE;
-            PIMAGE_SECTION_HEADER ishcur;
-            for (int j = 0; j < nsec; ++j)
-            {
-                ishcur = ish + j;
-                if (rvafunc >= ishcur->VirtualAddress && rvafunc < (ishcur->VirtualAddress + ishcur->Misc.VirtualSize))
-                {
-                    if (ishcur->Characteristics & IMAGE_SCN_MEM_EXECUTE)
-                    {
-                        isDataExport = FALSE;
-                        break;
-                    }
-                }
-            }
-            if (isDataExport)
-                Vlog("dataApi: -");
-            dataExp = !!isDataExport;
-        }
-        else
-        {
-            // 是转向函数，设定转向信息
-            Vlog("redirectApi: " << lpImage + rvafunc);
-            forwardApi = true;
-        }
+        CheckDataExportOrForwardApi(dataExp, forwardApi, rvafunc, &imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT], imNH, lpImage);
 
         ad.rva = rvafunc;
         ad.va = rvafunc + (DWORD)lpImage;
@@ -824,6 +929,57 @@ void CollectModuleInfo(HMODULE hmod, const char* modname, const char* modpath, P
     Vlog("[CollectModuleInfo] exit.");
 }
 
+
+bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
+{
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+
+    if (!param->bNtdllInited)
+        return false;
+    if (!hmod)
+        return false;
+    if (g_HookManager->IsThreadAlreadyStoppedHook(GetCurThreadId()))
+        return false;
+    if (g_HookManager->IsModuleAlreadyHooked(hmod))
+        return false;
+
+    wchar_t wBuffer[512] = { '$' };
+    UNICODE_STRING wsName;
+    wsName.MaximumLength = sizeof(wBuffer);
+    wsName.Buffer = wBuffer;
+    wsName.Length = 0;
+    param->f_LdrGetDllFullName(hmod, &wsName);
+    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
+    if (moduleName.empty() && !_path.empty())
+        moduleName.assign(_path);
+    if (moduleName.empty())
+        moduleName = GetDllNameFromExportDirectory(hmod);
+    Vlog("[DoModuleHook] dll: " << moduleName.c_str() << ", base: " << (LPVOID)hmod);
+    if (moduleName.empty())
+        return false;
+    string path = _path;
+    if (_path.empty())
+        path.assign(moduleName);
+
+    PipeDefine::msg::ModuleApis msgModuleApis;
+    CollectModuleInfo(hmod, moduleName, path, msgModuleApis);
+    auto content = msgModuleApis.Serial();
+    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+
+    if (checkPipeReply)
+    {
+        PipeDefine::PipeMsg recv_type;
+        content.clear();
+        PipeLine::msPipe->Recv(recv_type, content);
+        PipeDefine::msg::ApiFilter filter;
+        filter.Unserial(content);
+        Vlog("[DoModuleHook] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+    }
+    HookModuleExportTable(hmod, moduleName, path);
+
+    g_HookManager->AppendHookedModule(hmod);
+    return true;
+}
 
 void HookLoadedModules()
 {
@@ -943,6 +1099,8 @@ void GetApis(bool ntdllOnly)
     GET_NTDLL_API(RtlEnterCriticalSection);
     GET_NTDLL_API(RtlLeaveCriticalSection);
     GET_NTDLL_API(LdrGetDllFullName);
+    GET_NTDLL_API(NtDelayExecution);
+    //GET_NTDLL_API(NtQueryInformationFile);
 
     if (ntdllOnly)
         return;
@@ -1042,6 +1200,8 @@ void InitNtdllApiAndEnv()
 
     GetApis(true);
     Allocator::InitAllocator();
+    g_HookManager = (HookManager*)Allocator::Malloc(sizeof(HookManager));
+    new (g_HookManager) HookManager();
     BuildPipe(false);
 
     PipeDefine::msg::ModuleApis msgModuleApis;
@@ -1101,6 +1261,7 @@ void InitKernelDllAndEnv()
             filter.Unserial(content);
             Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
             HookModuleExportTable(preLoadAddr[i], preLoadName[i], preLoadName[i]);
+            g_HookManager->AppendHookedModule(preLoadAddr[i]);
         }
     }
 }
@@ -1108,7 +1269,11 @@ void InitKernelDllAndEnv()
 NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING ModuleFileName, PHANDLE ModuleHandle)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    if (g_HookManager)
+        g_HookManager->StopHookForThread(GetCurThreadId());
     NTSTATUS ret = param->f_LdrLoadDll(PathToFile, Flags, ModuleFileName, ModuleHandle);
+    if (g_HookManager)
+        g_HookManager->ResumeHookForThread(GetCurThreadId());
 
     InitNtdllApiAndEnv();
     InitKernelDllAndEnv();
@@ -1132,12 +1297,61 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
         Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
 
         HookModuleExportTable((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str());
+        g_HookManager->AppendHookedModule((HMODULE)*ModuleHandle);
     }
     else
     {
         Vlog("[HookLdrLoadDllPad] skip.");
     }
     return ret;
+}
+
+NTSTATUS WINAPI NtMapViewOfSectionPadSub(HMODULE hModule, HANDLE secHandle)
+{
+    // 会先被调用到，在 LdrLoaddll 初始化前直接返回
+    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    if (!param->bNtdllInited)
+        return 0;
+    if (g_HookManager->IsThreadAlreadyStoppedHook(GetCurThreadId()))
+        return 0;
+    if (!hModule)
+        return 0;
+    const IMAGE_DOS_HEADER* dosHeader = (const IMAGE_DOS_HEADER*)hModule;
+    if (dosHeader->e_magic != 0x5a4d)
+        return 0;
+    if (((const IMAGE_NT_HEADERS*)((ULONG_PTR)hModule + dosHeader->e_lfanew))->Signature != 0x4550)
+        return 0;
+    if (g_HookManager->IsModuleAlreadyHooked(hModule))
+        return 0;
+
+    wchar_t wBuffer[512] = { '$' };
+    UNICODE_STRING wsName;
+    wsName.MaximumLength = sizeof(wBuffer);
+    wsName.Buffer = wBuffer;
+    wsName.Length = 0;
+    param->f_LdrGetDllFullName(hModule, &wsName);
+    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
+    if (moduleName.empty())
+        moduleName = GetDllNameFromExportDirectory(hModule);
+    Vlog("[DllMainCRTStartupPad] dll: " << moduleName.c_str() << ", base: " << (LPVOID)hModule);
+    if (moduleName.empty())
+        return 0;
+
+    PipeDefine::msg::ModuleApis msgModuleApis;
+    CollectModuleInfo((HMODULE)hModule, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
+
+    auto content = msgModuleApis.Serial();
+    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+    PipeDefine::PipeMsg recv_type;
+    content.clear();
+    PipeLine::msPipe->Recv(recv_type, content);
+    PipeDefine::msg::ApiFilter filter;
+    filter.Unserial(content);
+    Vlog("[DllMainCRTStartupPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
+
+    HookModuleExportTable((HMODULE)hModule, moduleName.c_str(), moduleName.c_str());
+    g_HookManager->AppendHookedModule(hModule);
+    return 0;
 }
 
 NTSTATUS NTAPI NtMapViewOfSectionPad(
@@ -1162,17 +1376,27 @@ NTSTATUS NTAPI NtMapViewOfSectionPad(
         mov eax, 0x7ffd0020
         mov eax, dword ptr [eax]
         call edx
+        cmp eax, 0
+        jne SKIP
+        mov eax, dword ptr [esp + 0x4]
+        push eax
+        mov eax, dword ptr [esp + 0x10]        // *BaseAddress
+        mov eax, dword ptr [eax]
+        push eax
+        call NtMapViewOfSectionPadSub
+SKIP:
         ret 28h
     }
 }
 
 void DllMainCRTStartupPadSub(HINSTANCE instance)
 {
+    return;
+
     // 会先被调用到，在 LdrLoaddll 初始化前直接返回
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     if (!param->bNtdllInited)
         return;
-
     wchar_t wBuffer[512] = { '$' };
     UNICODE_STRING wsName;
     wsName.MaximumLength = sizeof(wBuffer);
@@ -1202,7 +1426,7 @@ __declspec(naked) BOOL WINAPI DllMainCRTStartupPad(FN_DllMainCRTStartup pDllMain
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
-        DllMainCRTStartupPadSub(instance);
+        //DllMainCRTStartupPadSub(instance);
     }
 
     __asm {

@@ -189,7 +189,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         ULONG_PTR callInstrAddr = (ULONG_PTR)addrFound + 9;
         ULONG_PTR retAddr = callInstrAddr + 2;
         jmp1[1] = (char)(0x100 - (retAddr - (ULONG_PTR)pad));
-        WriteProcessMemory(hProcess, (char*)callInstrAddr, jmp1, sizeof(jmp1), &R);
+        //WriteProcessMemory(hProcess, (char*)callInstrAddr, jmp1, sizeof(jmp1), &R);
         auto hook = GetProcAddress(hDll2, "DllMainCRTStartupPad");
         char jmp2[11] = { 0 };
         jmp2[0] = '\x68';
@@ -197,7 +197,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
         jmp2[5] = '\x68';
         *(PDWORD)&jmp2[6] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
         jmp2[10] = '\xc3';
-        WriteProcessMemory(hProcess, pad, jmp2, sizeof(jmp2), &R);
+        //WriteProcessMemory(hProcess, pad, jmp2, sizeof(jmp2), &R);
     }
 
     FreeLibrary(hDll2);

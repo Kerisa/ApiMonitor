@@ -27,5 +27,5 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
 __declspec(dllexport) DWORD Print(int i)
 {
-    return GetTickCount();
+    return GetSysColor(2) + GetTickCount();
 }
