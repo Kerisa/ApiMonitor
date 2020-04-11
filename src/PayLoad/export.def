@@ -1,5 +1,4 @@
 EXPORTS
 	Entry
 	HookLdrLoadDllPad
-	DllMainCRTStartupPad
 	NtMapViewOfSectionPad

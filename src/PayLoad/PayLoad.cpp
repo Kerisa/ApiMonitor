@@ -458,7 +458,9 @@ RETRY_READ:
                     msPipe->mMsgWriteBuffer->clear();
                 }
             }
-            param->f_Sleep(1);
+            __declspec(align(16)) LARGE_INTEGER li;
+            li.QuadPart = -10000;    // 1ms
+            param->f_NtDelayExecution(FALSE, &li);
         } while (!runOnce && !msPipe->mStopWorkingThread);
         Vlog("[PipeLine::WriteThread] exit.");
         return 0;
@@ -938,6 +940,11 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
         return false;
     if (!hmod)
         return false;
+    const IMAGE_DOS_HEADER* dosHeader = (const IMAGE_DOS_HEADER*)hmod;
+    if (dosHeader->e_magic != 0x5a4d)
+        return 0;
+    if (((const IMAGE_NT_HEADERS*)((ULONG_PTR)hmod + dosHeader->e_lfanew))->Signature != 0x4550)
+        return 0;
     if (g_HookManager->IsThreadAlreadyStoppedHook(GetCurThreadId()))
         return false;
     if (g_HookManager->IsModuleAlreadyHooked(hmod))
@@ -949,17 +956,34 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
     wsName.Buffer = wBuffer;
     wsName.Length = 0;
     param->f_LdrGetDllFullName(hmod, &wsName);
-    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
-    if (moduleName.empty() && !_path.empty())
-        moduleName.assign(_path);
+
+    string path = _path;
+    string moduleName;
+    for (int i = 0; i < wsName.Length && wsName.Buffer[i]; ++i)
+        moduleName += (char)wsName.Buffer[i];
     if (moduleName.empty())
-        moduleName = GetDllNameFromExportDirectory(hmod);
+    {
+        if (!path.empty())
+        {
+            moduleName.assign(path);
+        }
+        else
+        {
+            moduleName = GetDllNameFromExportDirectory(hmod);
+            path.assign(moduleName);
+        }
+    }
+    else
+    {
+        // 来自 LdrGetDllFullName 的全路径
+        path.assign(moduleName);
+        size_t pos = moduleName.find_last_of('\\');
+        if (pos != string::npos)
+            moduleName = moduleName.substr(pos + 1);
+    }
     Vlog("[DoModuleHook] dll: " << moduleName.c_str() << ", base: " << (LPVOID)hmod);
     if (moduleName.empty())
         return false;
-    string path = _path;
-    if (_path.empty())
-        path.assign(moduleName);
 
     PipeDefine::msg::ModuleApis msgModuleApis;
     CollectModuleInfo(hmod, moduleName, path, msgModuleApis);
@@ -1003,20 +1027,7 @@ void HookLoadedModules()
     do
     {
         Vlog("[HookLoadedModules] process: " << me32.szModule << ", image base: " << (LPVOID)me32.modBaseAddr << ", path: " << me32.szExePath);
-        PipeDefine::msg::ModuleApis msgModuleApis;
-        CollectModuleInfo((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath, msgModuleApis);
-
-        auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-        PipeDefine::PipeMsg recv_type;
-        content.clear();
-        PipeLine::msPipe->Recv(recv_type, content);
-        PipeDefine::msg::ApiFilter filter;
-        filter.Unserial(content);
-        Vlog("[HookLoadedModules] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-
-        HookModuleExportTable((HMODULE)me32.modBaseAddr, me32.szModule, me32.szExePath);
-
+        DoModuleHook((HMODULE)me32.modBaseAddr, me32.szExePath, true);
     } while (param->f_Module32Next(hModuleSnap, &me32));
 
     param->f_CloseHandle(hModuleSnap);
@@ -1128,7 +1139,6 @@ void GetApis(bool ntdllOnly)
     param->f_WaitNamedPipeA = (FN_WaitNamedPipeA)param->f_GetProcAddress((HMODULE)param->kernel32, "WaitNamedPipeA");
     param->f_SetNamedPipeHandleState = (FN_SetNamedPipeHandleState)param->f_GetProcAddress((HMODULE)param->kernel32, "SetNamedPipeHandleState");
     param->f_GetLastError = (FN_GetLastError)param->f_GetProcAddress((HMODULE)param->kernel32, "GetLastError");
-    param->f_Sleep = (FN_Sleep)param->f_GetProcAddress((HMODULE)param->kernel32, "Sleep");
 }
 
 void BuildPipe(bool connect)
@@ -1204,14 +1214,9 @@ void InitNtdllApiAndEnv()
     new (g_HookManager) HookManager();
     BuildPipe(false);
 
-    PipeDefine::msg::ModuleApis msgModuleApis;
-    CollectModuleInfo((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll", msgModuleApis);
-    auto content = msgModuleApis.Serial();
-    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-
-    HookModuleExportTable((HMODULE)param->ntdllBase, "ntdll.dll", "ntdll.dll");
-
+    // 前后有依赖关系...
     param->bNtdllInited = true;
+    DoModuleHook((HMODULE)param->ntdllBase, "ntdll.dll", false);
 }
 
 void InitKernelDllAndEnv()
@@ -1250,18 +1255,7 @@ void InitKernelDllAndEnv()
         const char* preLoadName[preLoadCount] = { "kernelbase.dll", "kernel32.dll" };
         for (int i = 0; i < preLoadCount; ++i)
         {
-            PipeDefine::msg::ModuleApis msgModuleApis;
-            CollectModuleInfo(preLoadAddr[i], preLoadName[i], preLoadName[i], msgModuleApis);
-            auto content = msgModuleApis.Serial();
-            PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-            PipeDefine::PipeMsg recv_type;
-            content.clear();
-            PipeLine::msPipe->Recv(recv_type, content);
-            PipeDefine::msg::ApiFilter filter;
-            filter.Unserial(content);
-            Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-            HookModuleExportTable(preLoadAddr[i], preLoadName[i], preLoadName[i]);
-            g_HookManager->AppendHookedModule(preLoadAddr[i]);
+            DoModuleHook(preLoadAddr[i], preLoadName[i], true);
         }
     }
 }
@@ -1282,22 +1276,11 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
     // for this new loaded dll
     if (ret == 0 && *ModuleHandle != param->kernel32 && *ModuleHandle != param->kernelBase)
     {
-        string moduleName(ModuleFileName->Buffer, ModuleFileName->Buffer + ModuleFileName->Length);
+        string moduleName;
+        for (int i = 0; i < ModuleFileName->Length && ModuleFileName->Buffer[i]; ++i)
+            moduleName += (char)ModuleFileName->Buffer[i];
         Vlog("[HookLdrLoadDllPad] dll: " << moduleName.c_str() << ", base: " << *ModuleHandle);
-        PipeDefine::msg::ModuleApis msgModuleApis;
-        CollectModuleInfo((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
-
-        auto content = msgModuleApis.Serial();
-        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-        PipeDefine::PipeMsg recv_type;
-        content.clear();
-        PipeLine::msPipe->Recv(recv_type, content);
-        PipeDefine::msg::ApiFilter filter;
-        filter.Unserial(content);
-        Vlog("[HookLdrLoadDllPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-
-        HookModuleExportTable((HMODULE)*ModuleHandle, moduleName.c_str(), moduleName.c_str());
-        g_HookManager->AppendHookedModule((HMODULE)*ModuleHandle);
+        DoModuleHook((HMODULE)*ModuleHandle, moduleName, true);
     }
     else
     {
@@ -1308,49 +1291,10 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
 
 NTSTATUS WINAPI NtMapViewOfSectionPadSub(HMODULE hModule, HANDLE secHandle)
 {
-    // 会先被调用到，在 LdrLoaddll 初始化前直接返回
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
     if (!param->bNtdllInited)
         return 0;
-    if (g_HookManager->IsThreadAlreadyStoppedHook(GetCurThreadId()))
-        return 0;
-    if (!hModule)
-        return 0;
-    const IMAGE_DOS_HEADER* dosHeader = (const IMAGE_DOS_HEADER*)hModule;
-    if (dosHeader->e_magic != 0x5a4d)
-        return 0;
-    if (((const IMAGE_NT_HEADERS*)((ULONG_PTR)hModule + dosHeader->e_lfanew))->Signature != 0x4550)
-        return 0;
-    if (g_HookManager->IsModuleAlreadyHooked(hModule))
-        return 0;
-
-    wchar_t wBuffer[512] = { '$' };
-    UNICODE_STRING wsName;
-    wsName.MaximumLength = sizeof(wBuffer);
-    wsName.Buffer = wBuffer;
-    wsName.Length = 0;
-    param->f_LdrGetDllFullName(hModule, &wsName);
-    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
-    if (moduleName.empty())
-        moduleName = GetDllNameFromExportDirectory(hModule);
-    Vlog("[DllMainCRTStartupPad] dll: " << moduleName.c_str() << ", base: " << (LPVOID)hModule);
-    if (moduleName.empty())
-        return 0;
-
-    PipeDefine::msg::ModuleApis msgModuleApis;
-    CollectModuleInfo((HMODULE)hModule, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
-
-    auto content = msgModuleApis.Serial();
-    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-    PipeDefine::PipeMsg recv_type;
-    content.clear();
-    PipeLine::msPipe->Recv(recv_type, content);
-    PipeDefine::msg::ApiFilter filter;
-    filter.Unserial(content);
-    Vlog("[DllMainCRTStartupPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-
-    HookModuleExportTable((HMODULE)hModule, moduleName.c_str(), moduleName.c_str());
-    g_HookManager->AppendHookedModule(hModule);
+    DoModuleHook((HMODULE)hModule, "", true);
     return 0;
 }
 
@@ -1386,51 +1330,6 @@ NTSTATUS NTAPI NtMapViewOfSectionPad(
         call NtMapViewOfSectionPadSub
 SKIP:
         ret 28h
-    }
-}
-
-void DllMainCRTStartupPadSub(HINSTANCE instance)
-{
-    return;
-
-    // 会先被调用到，在 LdrLoaddll 初始化前直接返回
-    PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    if (!param->bNtdllInited)
-        return;
-    wchar_t wBuffer[512] = { '$' };
-    UNICODE_STRING wsName;
-    wsName.MaximumLength = sizeof(wBuffer);
-    wsName.Buffer = wBuffer;
-    wsName.Length = 0;
-    param->f_LdrGetDllFullName(instance, &wsName);
-    string moduleName(wsName.Buffer, wsName.Buffer + wsName.Length);
-    Vlog("[DllMainCRTStartupPad] dll: " << moduleName.c_str() << ", base: " << (LPVOID)instance);
-    PipeDefine::msg::ModuleApis msgModuleApis;
-    CollectModuleInfo((HMODULE)instance, moduleName.c_str(), moduleName.c_str(), msgModuleApis);
-
-    auto content = msgModuleApis.Serial();
-    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
-    PipeDefine::PipeMsg recv_type;
-    content.clear();
-    PipeLine::msPipe->Recv(recv_type, content);
-    PipeDefine::msg::ApiFilter filter;
-    filter.Unserial(content);
-    Vlog("[DllMainCRTStartupPad] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
-
-    HookModuleExportTable((HMODULE)instance, moduleName.c_str(), moduleName.c_str());
-}
-
-typedef BOOL(WINAPI * FN_DllMainCRTStartup)(HINSTANCE instance, DWORD reason, LPVOID reserved);
-
-__declspec(naked) BOOL WINAPI DllMainCRTStartupPad(FN_DllMainCRTStartup pDllMainCRTStartup, HINSTANCE instance, DWORD reason, LPVOID reserved)
-{
-    if (reason == DLL_PROCESS_ATTACH)
-    {
-        //DllMainCRTStartupPadSub(instance);
-    }
-
-    __asm {
-        jmp pDllMainCRTStartup
     }
 }
 

@@ -99,26 +99,34 @@ void DllFilterConfig::SaveToFile()
     f.close();
 }
 
-void DllFilterConfig::UpdateApi(const CString & _dllName, const CString & _apiName, Status s)
+void DllFilterConfig::UpdateApi(const CString & _dllPath, const CString & _apiName, Status s)
 {
-    string dllName = ToStdString(_dllName);
+    string dllName = ToStdString(_dllPath);
     string apiName = ToStdString(_apiName);
     UpdateApi(dllName, apiName, s);
 }
 
-void DllFilterConfig::UpdateApi(const std::string & dllName, const std::string & apiName, Status s)
+void DllFilterConfig::UpdateApi(const std::string & dllPath, const std::string & apiName, Status s)
 {
     if (s != kHook && s != kIgnore)
         throw "invalid status";
 
-    auto& mDetail = mModules[dllName];
+    auto p = dllPath;
+    for (auto& c : p)
+        c = tolower(c);
+
+    auto& mDetail = mModules[p];
     auto& aDetail = mDetail.mApis[apiName];
     aDetail.mHook = s == kHook;
 }
 
 DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const std::string& dllPath, const std::string& apiName)
 {
-    auto it = mModules.find(dllPath);
+    auto p = dllPath;
+    for (auto& c : p)
+        c = tolower(c);
+
+    auto it = mModules.find(p);
     if (it == mModules.end())
         return kNotDefine;
     auto itt = it->second.mApis.find(apiName);
@@ -129,7 +137,10 @@ DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const std::string& dll
 
 size_t DllFilterConfig::GetModuleApiCountInConfig(const std::string & dllPath) const
 {
-    auto it = mModules.find(dllPath);
+    auto p = dllPath;
+    for (auto& c : p)
+        c = tolower(c);
+    auto it = mModules.find(p);
     if (it == mModules.end())
         return 0;
     return it->second.mApis.size();

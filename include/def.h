@@ -219,8 +219,6 @@ typedef DWORD (WINAPI * FN_GetLastError)();
 
 typedef DWORD (WINAPI * FN_GetCurrentThreadId)();
 
-typedef void (WINAPI * FN_Sleep)(DWORD dwMilliseconds);
-
 struct PARAM
 {
     static const DWORD PARAM_ADDR = 0x7ffd0000;
@@ -254,7 +252,6 @@ struct PARAM
     FN_RtlLeaveCriticalSection      f_RtlLeaveCriticalSection;
     FN_LdrGetDllFullName            f_LdrGetDllFullName;
     FN_NtDelayExecution             f_NtDelayExecution;
-    //FN_NtQueryInformationFile       f_NtQueryInformationFile;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;
@@ -278,7 +275,6 @@ struct PARAM
     FN_WaitNamedPipeA            f_WaitNamedPipeA;
     FN_SetNamedPipeHandleState   f_SetNamedPipeHandleState;
     FN_GetLastError              f_GetLastError;
-    FN_Sleep                     f_Sleep;
 
 
     CONTEXT ctx;
