@@ -33,6 +33,8 @@ CString DllFilterConfig::GetConfigDir()
 bool DllFilterConfig::LoadFromFile()
 {
     ifstream f(ToStdString(GetConfigPath()), ios::binary);
+    if (!f.is_open())
+        return false;
     f.seekg(0, ios::end);
     vector<char> data(f.tellg());
     if (data.size() == 0)

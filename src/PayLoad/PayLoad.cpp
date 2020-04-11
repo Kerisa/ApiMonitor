@@ -1140,6 +1140,32 @@ NTSTATUS NTAPI HookLdrLoadDllPad(PWCHAR PathToFile, ULONG Flags, PUNICODE_STRING
     return ret;
 }
 
+NTSTATUS NTAPI NtMapViewOfSectionPad(
+    HANDLE          SectionHandle,
+    HANDLE          ProcessHandle,
+    PVOID           *BaseAddress,
+    ULONG_PTR       ZeroBits,
+    SIZE_T          CommitSize,
+    PLARGE_INTEGER  SectionOffset,
+    PSIZE_T         ViewSize,
+    LONG            InheritDisposition, // enum SECTION_INHERIT
+    ULONG           AllocationType,
+    ULONG           Win32Protect
+)
+{
+    static_assert(PARAM::PARAM_ADDR                         == 0x7ffd0000, "offset out of date");
+    static_assert((DWORD)&((PARAM*)0)->NtMapViewOfSectionServerId == 0x20, "offset out of date");
+    static_assert((DWORD)&((PARAM*)0)->f_Wow64SystemServiceCall   == 0x24, "offset out of date");
+    __asm {
+        mov edx, 0x7ffd0024
+        mov edx, dword ptr [edx]
+        mov eax, 0x7ffd0020
+        mov eax, dword ptr [eax]
+        call edx
+        ret 28h
+    }
+}
+
 void DllMainCRTStartupPadSub(HINSTANCE instance)
 {
     // 会先被调用到，在 LdrLoaddll 初始化前直接返回

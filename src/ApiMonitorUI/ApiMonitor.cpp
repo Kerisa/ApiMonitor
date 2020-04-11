@@ -129,6 +129,19 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
 
 
     ///////////////////////////////////////////////////////////////////////////
+    // À¹½Ø NtMapViewOfSection
+    {
+        ULONG_PTR pNtMapViewOfSection = (ULONG_PTR)GetProcAddress(ntDllBase, "NtMapViewOfSection");
+        auto hook = GetProcAddress(hDll2, "NtMapViewOfSectionPad");
+        char jmp[6] = { 0 };
+        jmp[0] = '\x68';
+        *(PDWORD)&jmp[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+        jmp[5] = '\xc3';
+        WriteProcessMemory(hProcess, (LPVOID)pNtMapViewOfSection, jmp, sizeof(jmp), &R);
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////
     // À¹½Øµ÷ÓÃ _DllMainCRTStartup ´¦
     {
         PIMAGE_NT_HEADERS ntDllNtHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)ntDllBase + ((PIMAGE_DOS_HEADER)ntDllBase)->e_lfanew);
@@ -211,7 +224,7 @@ int Monitor::LoadFile(const std::wstring& filePath)
     BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
 
     LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    PVOID oep = Detail::BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+
     SIZE_T R = 0;
     PARAM param;
     memset(&param, 0, sizeof(PARAM));
@@ -221,6 +234,16 @@ int Monitor::LoadFile(const std::wstring& filePath)
     param.dwThreadId = pi.dwThreadId;
     param.ctx.ContextFlags = CONTEXT_ALL;
     GetThreadContext(pi.hThread, &param.ctx);
+
+    char bytesOfNtMapViewOfSectionPad[32] = { 0 };
+    ReadProcessMemory(pi.hProcess, (LPVOID)GetProcAddress((HMODULE)param.ntdllBase, "NtMapViewOfSection"), bytesOfNtMapViewOfSectionPad, sizeof(bytesOfNtMapViewOfSectionPad), &R);
+    assert(bytesOfNtMapViewOfSectionPad[0] == '\xb8');  // mov eax,28h
+    param.NtMapViewOfSectionServerId = *(PDWORD)&bytesOfNtMapViewOfSectionPad[1];
+    assert(bytesOfNtMapViewOfSectionPad[5] == '\xba');  // mov edx,offset XXX
+    param.f_Wow64SystemServiceCall = (LPVOID)*(PDWORD)&bytesOfNtMapViewOfSectionPad[6];
+    assert(*(PWORD)&bytesOfNtMapViewOfSectionPad[10] == 0xd2ff);  // call edx
+
+    PVOID oep = Detail::BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
     WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;

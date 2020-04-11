@@ -224,14 +224,16 @@ struct PARAM
     LPVOID ntdllBase;
     LPVOID kernelBase;
     LPVOID kernel32;
-    DWORD dwProcessId;
-    DWORD dwThreadId;
-    CONTEXT ctx;
+    DWORD  dwProcessId;
+    DWORD  dwThreadId;
     HANDLE NormalHeapHandle;
     HANDLE ExecuteHeapHandle;
 
-    bool  bNtdllInited;
-    bool  bOthersInited;
+    bool   bNtdllInited;
+    bool   bOthersInited;
+
+    DWORD  NtMapViewOfSectionServerId;
+    LPVOID f_Wow64SystemServiceCall;
 
     // ntdll
     FN_LdrInitializeThunk           f_LdrInitializeThunk;
@@ -271,4 +273,7 @@ struct PARAM
     FN_SetNamedPipeHandleState   f_SetNamedPipeHandleState;
     FN_GetLastError              f_GetLastError;
     FN_Sleep                     f_Sleep;
+
+
+    CONTEXT ctx;
 };
