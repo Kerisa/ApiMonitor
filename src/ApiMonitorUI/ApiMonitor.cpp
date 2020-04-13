@@ -192,7 +192,9 @@ int Monitor::LoadFile(const std::wstring& filePath)
 
     NamedPipeServer ps;
     std::thread th = std::thread([&]() {
-        ps.StartServer(PipeDefine::PIPE_NAME, mControllerRef->mMsgHandler, mControllerRef->mUserData);
+        char piepeName[256] = { 0 };
+        sprintf_s(piepeName, sizeof(piepeName), PipeDefine::PIPE_NAME_TEMPLATE, pi.dwProcessId);
+        ps.StartServer(piepeName, mControllerRef->mMsgHandler, mControllerRef->mUserData);
     });
 
     while (!ps.IsRunning())

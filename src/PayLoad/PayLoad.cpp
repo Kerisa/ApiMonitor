@@ -244,9 +244,11 @@ public:
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
         int busyRetry = 5;
         Vlog("[PipeLine::ConnectServer]");
+        char piepeName[256] = { 0 };
+        sprintf_s(piepeName, sizeof(piepeName), PipeDefine::PIPE_NAME_TEMPLATE, param->dwProcessId);
         while (busyRetry--)
         {
-            mPipe = param->f_CreateFileA(PipeDefine::PIPE_NAME, GENERIC_READ | GENERIC_WRITE,
+            mPipe = param->f_CreateFileA(piepeName, GENERIC_READ | GENERIC_WRITE,
                 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL
             );
             if (mPipe != INVALID_HANDLE_VALUE)
@@ -258,7 +260,7 @@ public:
                 return false;
             }
 
-            if (!param->f_WaitNamedPipeA(PipeDefine::PIPE_NAME, NMPWAIT_USE_DEFAULT_WAIT))
+            if (!param->f_WaitNamedPipeA(piepeName, NMPWAIT_USE_DEFAULT_WAIT))
             {
                 Vlog("[PipeLine::ConnectServer] Could not open pipe: 20 second wait timed out.");
                 return false;

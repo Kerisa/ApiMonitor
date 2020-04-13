@@ -126,62 +126,15 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
 
 
     ///////////////////////////////////////////////////////////////////////////
-    // 拦截 LdrxCallInitRoutine(调用 _DllMainCRTStartup)
+    // 拦截 NtMapViewOfSection
     {
-        PIMAGE_NT_HEADERS ntDllNtHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)ntDllBase + ((PIMAGE_DOS_HEADER)ntDllBase)->e_lfanew);
-        PIMAGE_SECTION_HEADER ntDllSecHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)ntDllNtHeader + sizeof(IMAGE_NT_HEADERS));
-        DWORD ntDllSecHeaderBegin = ntDllSecHeader->VirtualAddress;
-        //
-        // ff7514   push    dword ptr[ebp + 14h]
-        // ff7510   push    dword ptr[ebp + 10h]
-        // ff750c   push    dword ptr[ebp + 0Ch]
-        // ff5508   call    dword ptr[ebp + 8]
-        //
-        char pattern[] = "\xff\x75\x14\xff\x75\x10\xff\x75\x0c\xff\x55\x08";
-        char pattern2[] = "\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xcc";
-        void* addrFound = nullptr;
-        void* pad       = nullptr;
-        for (DWORD i = 0; i < ntDllNtHeader->FileHeader.NumberOfSections; ++i)
-        {
-            if (strncmp((char*)ntDllSecHeader->Name, ".text", 8))
-            {
-                ++ntDllSecHeader;
-                continue;
-            }
-
-            for (int k = 0; k < ntDllSecHeader->Misc.VirtualSize; ++k)
-            {
-                if (!memcmp((char*)((ULONG_PTR)ntDllBase + ntDllSecHeader->VirtualAddress + k), pattern, sizeof(pattern) - 1))
-                {
-                    addrFound = (char*)((ULONG_PTR)ntDllBase + ntDllSecHeader->VirtualAddress + k);
-                    break;
-                }
-            }
-            break;
-        }
-        assert(addrFound && "_DllMainCRTStartup caller not found");
-        for (char* i = (char*)addrFound; i > (char*)addrFound - 128; --i)
-        {
-            if (!memcmp(i, pattern2, sizeof(pattern2) - 1))
-            {
-                pad = i;
-                break;
-            }
-        }
-        assert(pad && "launch address not found 2");
-        char jmp1[3] = { '\xeb', '\x90', '\x90' };
-        ULONG_PTR callInstrAddr = (ULONG_PTR)addrFound + 9;
-        ULONG_PTR retAddr = callInstrAddr + 2;
-        jmp1[1] = (char)(0x100 - (retAddr - (ULONG_PTR)pad));
-        WriteProcessMemory(hProcess, (char*)callInstrAddr, jmp1, sizeof(jmp1), &R);
-        auto hook = GetProcAddress(hDll2, "DllMainCRTStartupPad");
-        char jmp2[11] = { 0 };
-        jmp2[0] = '\x68';
-        *(PDWORD)&jmp2[1] = (DWORD)retAddr;
-        jmp2[5] = '\x68';
-        *(PDWORD)&jmp2[6] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
-        jmp2[10] = '\xc3';
-        WriteProcessMemory(hProcess, pad, jmp2, sizeof(jmp2), &R);
+        ULONG_PTR pNtMapViewOfSection = (ULONG_PTR)GetProcAddress(ntDllBase, "NtMapViewOfSection");
+        auto hook = GetProcAddress(hDll2, "NtMapViewOfSectionPad");
+        char jmp[6] = { 0 };
+        jmp[0] = '\x68';
+        *(PDWORD)&jmp[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
+        jmp[5] = '\xc3';
+        WriteProcessMemory(hProcess, (LPVOID)pNtMapViewOfSection, jmp, sizeof(jmp), &R);
     }
 
     FreeLibrary(hDll2);
@@ -322,7 +275,7 @@ int main(int argc, char** argv)
     BOOL success = CreateProcess(app, cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
 
     LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+
     SIZE_T R = 0;
     PARAM param;
     memset(&param, 0, sizeof(PARAM));
@@ -333,6 +286,16 @@ int main(int argc, char** argv)
     param.ctx.ContextFlags = CONTEXT_ALL;
     GetThreadContext(pi.hThread, &param.ctx);
 
+    char bytesOfNtMapViewOfSectionPad[32] = { 0 };
+    ReadProcessMemory(pi.hProcess, (LPVOID)GetProcAddress((HMODULE)param.ntdllBase, "NtMapViewOfSection"), bytesOfNtMapViewOfSectionPad, sizeof(bytesOfNtMapViewOfSectionPad), &R);
+    assert(bytesOfNtMapViewOfSectionPad[0] == '\xb8');  // mov eax,28h
+    param.NtMapViewOfSectionServerId = *(PDWORD)&bytesOfNtMapViewOfSectionPad[1];
+    assert(bytesOfNtMapViewOfSectionPad[5] == '\xba');  // mov edx,offset XXX
+    param.f_Wow64SystemServiceCall = (LPVOID)*(PDWORD)&bytesOfNtMapViewOfSectionPad[6];
+    assert(*(PWORD)&bytesOfNtMapViewOfSectionPad[10] == 0xd2ff);  // call edx
+
+    PVOID oep = BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+
     WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;
     copy.Eax = (DWORD)oep;
@@ -340,7 +303,9 @@ int main(int argc, char** argv)
 
     NamedPipeServer ps;
     std::thread th = std::thread([&]() {
-        ps.StartServer(PipeDefine::PIPE_NAME, Reply, nullptr);
+        char piepeName[256] = { 0 };
+        sprintf_s(piepeName, sizeof(piepeName), PipeDefine::PIPE_NAME_TEMPLATE, pi.dwProcessId);
+        ps.StartServer(piepeName, Reply, nullptr);
     });
 
     while (!ps.IsRunning())

@@ -5,7 +5,7 @@
 
 namespace PipeDefine
 {
-    const constexpr char* PIPE_NAME = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}";
+    const constexpr char* PIPE_NAME_TEMPLATE = "\\\\.\\Pipe\\{8813F049-6B99-4962-8271-3C82FCB566D5}.%d";
 
     enum PipeMsg
     {
