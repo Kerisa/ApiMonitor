@@ -84,6 +84,9 @@
     <ClInclude Include="..\..\include\json\writer.h">
       <Filter>json</Filter>
     </ClInclude>
+    <ClInclude Include="CSetBreakPointTimeDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ApiMonitorUI.cpp">
@@ -124,6 +127,9 @@
     </ClCompile>
     <ClCompile Include="..\..\include\json\json_writer.cpp">
       <Filter>json</Filter>
+    </ClCompile>
+    <ClCompile Include="CSetBreakPointTimeDialog.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

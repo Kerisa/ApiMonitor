@@ -4,6 +4,7 @@
 
 #pragma once
 #include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 #include "ApiMonitor.h"
@@ -12,6 +13,14 @@
 
 class Monitor;
 class PipeController;
+
+struct SetBreakConditionUI : public PipeDefine::msg::SetBreakCondition
+{
+    bool operator<(const SetBreakConditionUI& rhs) const
+    {
+        return this->func_addr < rhs.func_addr;
+    }
+};
 
 // CApiMonitorUIDlg 对话框
 class CApiMonitorUIDlg : public CDialogEx
@@ -29,14 +38,18 @@ public:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV 支持
 
 public:
-    void UpdateModuleList(void* me);    // PipeController::ModuleEntry*
-    void AppendApiCallLog(void* ai);    // PipeController::ApiLog*
+    void UpdateModuleList(void* me);        // PipeController::ModuleEntry*
+    void AppendApiCallLog(void* ai);        // PipeController::ApiLog*
+    void CheckBreakCondition(void* ai);     // PipeController::ApiLog*
 
-    Monitor*                    m_Monitor;
-    PipeController*             m_Controller;
-    std::vector<ApiLogItem>     m_ApiLogs;
-    std::mutex                  m_LogLock;
-    std::vector<ModuleInfoItem> m_Modules;
+    bool IsModuleFunctionSelected();
+
+    Monitor*                         m_Monitor;
+    PipeController*                  m_Controller;
+    std::vector<ApiLogItem>          m_ApiLogs;
+    std::mutex                       m_LogLock;
+    std::vector<ModuleInfoItem>      m_Modules;
+    std::set<SetBreakConditionUI>    m_BreakPoints;     // SetBreakConditionUI 和 ApiLogItem 应整合到 ModuleInfoItem 里
 
 // 实现
 protected:
@@ -65,4 +78,10 @@ public:
     afx_msg void OnClose();
     afx_msg void OnFileExit();
     afx_msg void OnOptionConfig();
+    afx_msg void OnNMRClickTreeModules(NMHDR *pNMHDR, LRESULT *pResult);
+    afx_msg void OnSetbreakpointMeethittime();
+    afx_msg void OnUpdateSetBreakPointMeetHitTime(CCmdUI *pCmdUI);
+    afx_msg void OnSetbreakpointAlways();
+    afx_msg void OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI);
+    afx_msg void OnSetBreakPointDelete();
 };

@@ -478,11 +478,14 @@ public:
     {
         struct Param
         {
-            static constexpr UCHAR FLAG_BREAK_NEXT_TIME              = 1;
-            static constexpr UCHAR FLAG_BREAK_WHEN_CALL_FROM         = 2;
-            static constexpr UCHAR FLAG_BREAK_WHEN_REACH_INVOKE_TIME = 4;
+            static constexpr DWORD FLAG_BREAK_NEXT_TIME              = 1 << 0;
+            static constexpr DWORD FLAG_BREAK_WHEN_CALL_FROM         = 1 << 1;
+            static constexpr DWORD FLAG_BREAK_WHEN_REACH_INVOKE_TIME = 1 << 2;
+            static constexpr DWORD FLAG_CLEAR_NEXT_TIME              = 1 << 5;
+            static constexpr DWORD FLAG_CLEAR_WHEN_CALL_FROM         = 1 << 6;
+            static constexpr DWORD FLAG_CLEAR_WHEN_REACH_INVOKE_TIME = 1 << 7;
             long     mInvokeCount{ 0 };
-            UCHAR    mFlag{ 0 };
+            DWORD    mFlag{ 0 };
             long     mBreakReachInvokeTime{ 0 };
             LONG_PTR mBreakCallFromAddr{ 0 };
         };
@@ -536,6 +539,26 @@ public:
                 PipeLine::msPipe->mStopWorkingThread = true;
             }
 
+            // 清除断点
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_NEXT_TIME)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_NEXT_TIME;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_NEXT_TIME;
+            }
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_WHEN_CALL_FROM)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_WHEN_CALL_FROM;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
+                e->mParams.mBreakCallFromAddr = 0;
+            }
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_WHEN_REACH_INVOKE_TIME)
+            {
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_WHEN_REACH_INVOKE_TIME;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
+                e->mParams.mBreakReachInvokeTime = 0;
+            }
+
+            // 触发断点
             if (e->mParams.mFlag & Entry::Param::FLAG_BREAK_NEXT_TIME)
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_NEXT_TIME;

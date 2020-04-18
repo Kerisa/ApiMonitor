@@ -39,8 +39,6 @@ class PipeController
 public:
     typedef void (*Handler)(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer, void* userData);
 
-    CRITICAL_SECTION mPipeMsgCS;
-    PipeDefine::msg::SetBreakCondition mSetBreakCondition;
     Handler mMsgHandler;
     void* mUserData{ nullptr };
     bool mConditionReady{ false };
@@ -59,16 +57,21 @@ public:
         DeleteCriticalSection(&mPipeMsgCS);
     }
 
-    PipeDefine::msg::SetBreakCondition* Lock()
+private:
+    std::vector<PipeDefine::msg::SetBreakCondition>* Lock()
     {
         EnterCriticalSection(&mPipeMsgCS);
-        return &mSetBreakCondition;
+        return &mBreakConditions;
     }
 
     void UnLock()
     {
         LeaveCriticalSection(&mPipeMsgCS);
     }
+
+private:
+    CRITICAL_SECTION mPipeMsgCS;
+    std::vector<PipeDefine::msg::SetBreakCondition> mBreakConditions;
 };
 
 class Monitor

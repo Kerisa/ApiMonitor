@@ -42,3 +42,12 @@ CString ToCString(long long i, bool hex)
     cs.Format((hex ? _T("0x%llx") : _T("%lld")), i);
     return cs;
 }
+
+unsigned long long ToInt(const CString & str, bool hex)
+{
+#ifndef UNICODE
+    return strtoull(str, 0, hex ? 16 : 10);
+#else
+    return strtoull(ToStdString(str).c_str(), 0, hex ? 16 : 10);
+#endif
+}

@@ -10,6 +10,7 @@
 #include "afxdialogex.h"
 #include "ApiMonitor.h"
 #include "CAddModuleFilterDlg.h"
+#include "CSetBreakPointTimeDialog.h"
 #include "uihelper.h"
 
 #ifdef _DEBUG
@@ -18,6 +19,23 @@
 
 #define ID_REFRESH_API_CALL_LOG_TIMER 1
 #define WM_TREE_ADD_MODULE WM_USER+100  
+
+const int TreeCtrlColumnIndex_Module     = 0;
+const int TreeCtrlColumnIndex_VA         = 1;
+const int TreeCtrlColumnIndex_HookCount  = 2;
+const int TreeCtrlColumnIndex_HitCount   = 3;
+const int TreeCtrlColumnIndex_BreakPoint = 4;
+
+const int ListApiColumnIndex_No          = 0;
+const int ListApiColumnIndex_TID         = 1;
+const int ListApiColumnIndex_RetAddr     = 2;
+const int ListApiColumnIndex_Module      = 3;
+const int ListApiColumnIndex_Name        = 4;
+const int ListApiColumnIndex_Count       = 5;
+const int ListApiColumnIndex_Arg0        = 6;
+const int ListApiColumnIndex_Arg1        = 7;
+const int ListApiColumnIndex_Arg2        = 8;
+
 
 void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, uint32_t *writeDataSize, const uint32_t maxWriteBuffer, void* userData);
 
@@ -86,6 +104,11 @@ void CApiMonitorUIDlg::AppendApiCallLog(void * pv)
     m_ApiLogs.push_back(*al);
 }
 
+void CApiMonitorUIDlg::CheckBreakCondition(void * pv)
+{
+    ApiLogItem* al = reinterpret_cast<ApiLogItem*>(pv);
+}
+
 BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
@@ -98,6 +121,12 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_WM_CLOSE()
     ON_COMMAND(ID_FILE_EXIT, &CApiMonitorUIDlg::OnFileExit)
     ON_COMMAND(ID_OPTION_CONFIG, &CApiMonitorUIDlg::OnOptionConfig)
+    ON_NOTIFY(NM_RCLICK, IDC_TREE_MODULES, &CApiMonitorUIDlg::OnNMRClickTreeModules)
+    ON_COMMAND(ID_SETBREAKPOINT_MEETHITTIME, &CApiMonitorUIDlg::OnSetbreakpointMeethittime)
+    ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_MEETHITTIME, &CApiMonitorUIDlg::OnUpdateSetBreakPointMeetHitTime)
+    ON_COMMAND(ID_SETBREAKPOINT_ALWAYS, &CApiMonitorUIDlg::OnSetbreakpointAlways)
+    ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_ALWAYS, &CApiMonitorUIDlg::OnUpdateSetbreakpointAlways)
+    ON_COMMAND(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnSetBreakPointDelete)
 END_MESSAGE_MAP()
 
 
@@ -132,23 +161,25 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
-    m_treeModuleList.GetTreeCtrl().ModifyStyle(NULL, TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS | TVS_CHECKBOXES);
-    m_treeModuleList.InsertColumn(0, _T("Module"), LVCFMT_LEFT, 200, -1);
-    m_treeModuleList.InsertColumn(1, _T("VA"),     LVCFMT_LEFT, 100, -1);
-    m_treeModuleList.InsertColumn(2, _T("Hook Count"),  LVCFMT_LEFT, 100, -1);
+    m_treeModuleList.GetTreeCtrl().ModifyStyle(NULL, TVS_FULLROWSELECT | TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS | TVS_CHECKBOXES);
+    m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_Module,       _T("Module"),       LVCFMT_LEFT, 200, -1);
+    m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_VA,           _T("VA"),           LVCFMT_LEFT, 100, -1);
+    m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_HookCount,    _T("Hook Count"),   LVCFMT_LEFT, 100, -1);
+    m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_HitCount,     _T("Hit Count"),    LVCFMT_LEFT, 100, -1);
+    m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_BreakPoint,   _T("Break Point"),  LVCFMT_LEFT, 100, -1);
 
     SetTimer(ID_REFRESH_API_CALL_LOG_TIMER, 1000, NULL);
 
     m_listApiCalls.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-    m_listApiCalls.InsertColumn(0, _T("No."),     LVCFMT_LEFT, 50,  -1);
-    m_listApiCalls.InsertColumn(1, _T("TID"),     LVCFMT_LEFT, 50,  -1);
-    m_listApiCalls.InsertColumn(2, _T("RetAddr"), LVCFMT_LEFT, 70,  -1);
-    m_listApiCalls.InsertColumn(3, _T("Module"),  LVCFMT_LEFT, 120, -1);
-    m_listApiCalls.InsertColumn(4, _T("Name"),    LVCFMT_LEFT, 150, -1);
-    m_listApiCalls.InsertColumn(5, _T("Count"),   LVCFMT_LEFT, 50,  -1);
-    m_listApiCalls.InsertColumn(6, _T("Arg0"),    LVCFMT_LEFT, 70,  -1);
-    m_listApiCalls.InsertColumn(7, _T("Arg1"),    LVCFMT_LEFT, 70,  -1);
-    m_listApiCalls.InsertColumn(8, _T("Arg2"),    LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_No     , _T("No."),     LVCFMT_LEFT, 50,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_TID    , _T("TID"),     LVCFMT_LEFT, 50,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_RetAddr, _T("RetAddr"), LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Module , _T("Module"),  LVCFMT_LEFT, 120, -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Name   , _T("Name"),    LVCFMT_LEFT, 150, -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Count  , _T("Count"),   LVCFMT_LEFT, 50,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Arg0   , _T("Arg0"),    LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Arg1   , _T("Arg1"),    LVCFMT_LEFT, 70,  -1);
+    m_listApiCalls.InsertColumn(ListApiColumnIndex_Arg2   , _T("Arg2"),    LVCFMT_LEFT, 70,  -1);
 
     m_listApiCalls.Invalidate();
 
@@ -307,21 +338,12 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             al.mRawArgs[1] = m.raw_args[1];
             al.mRawArgs[2] = m.raw_args[2];
             dlg->AppendApiCallLog(&al);
-            //printf("Api Invoked: %s, %s, tid: %d, call from: 0x%llx, time: %d\n", m.module_name.c_str(), m.api_name.c_str(), msg->tid, m.call_from, m.times);
-            if (pc->mConditionReady)
-            {
-                pc->mConditionReady = false;
-                auto msg = pc->Lock();
-                str = msg->Serial();
-                PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-                msg2->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
-                msg2->tid = -1;
-                msg2->ContentSize = str.size();
-                memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-                *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
-                pc->UnLock();
-                printf("condition sent!\n");
-            }
+            //dlg->CheckBreakCondition(&al);
+            //PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+            //msg2->type = PipeDefine::Pipe_S_Ack_ApiInvoked;
+            //msg2->tid = msg->tid;
+            //msg2->ContentSize = 0;
+            //*writeDataSize = msg2->HeaderLength + msg2->ContentSize;
             break;
         }
         default:
@@ -379,7 +401,7 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     }
 
     HTREEITEM hMod = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(mii->mName), NULL, NULL, hRoot);
-    m_treeModuleList.SetItemText(hMod, 1, ToCString(mii->mBase, true));
+    m_treeModuleList.SetItemText(hMod, TreeCtrlColumnIndex_VA, ToCString(mii->mBase, true));
     int hookCount = 0;
     for (size_t i = 0; i < mii->mApis.size(); ++i)
     {
@@ -391,12 +413,12 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
             name += ")";
         }
         HTREEITEM hApi = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(name), NULL, NULL, hMod);
-        m_treeModuleList.SetItemText(hApi, 1, ToCString(mii->mApis[i].mVa, true));
+        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_VA, ToCString(mii->mApis[i].mVa, true));
         m_treeModuleList.GetTreeCtrl().SetCheck(hApi, mii->mApis[i].mIsHook);
         hookCount += (int)mii->mApis[i].mIsHook;
     }
     m_treeModuleList.GetTreeCtrl().SetCheck(hMod, mii->mApis.size() == hookCount);
-    m_treeModuleList.SetItemText(hMod, 2, ToCString(hookCount));
+    m_treeModuleList.SetItemText(hMod, TreeCtrlColumnIndex_HookCount, ToCString(hookCount));
     m_treeModuleList.GetTreeCtrl().EnsureVisible(hMod);
     return 0;
 }
@@ -430,14 +452,14 @@ void CApiMonitorUIDlg::OnTimer(UINT nIDEvent)
             CString arg2        = ToCString(m_ApiLogs[i].mRawArgs[2], true);
 
             idx = m_listApiCalls.InsertItem(i, index);
-            m_listApiCalls.SetItem(idx, 1, LVIF_TEXT, tid, 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 2, LVIF_TEXT, call_from, 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 3, LVIF_TEXT, m_ApiLogs[i].mModuleNameW.c_str(), 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 4, LVIF_TEXT, m_ApiLogs[i].mApiNameW.c_str(), 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 5, LVIF_TEXT, times, 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 6, LVIF_TEXT, arg0, 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 7, LVIF_TEXT, arg1, 0, 0, 0, 0);
-            m_listApiCalls.SetItem(idx, 8, LVIF_TEXT, arg2, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_TID    , LVIF_TEXT, tid, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_RetAddr, LVIF_TEXT, call_from, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Module , LVIF_TEXT, m_ApiLogs[i].mModuleNameW.c_str(), 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Name   , LVIF_TEXT, m_ApiLogs[i].mApiNameW.c_str(), 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Count  , LVIF_TEXT, times, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Arg0   , LVIF_TEXT, arg0, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Arg1   , LVIF_TEXT, arg1, 0, 0, 0, 0);
+            m_listApiCalls.SetItem(idx, ListApiColumnIndex_Arg2   , LVIF_TEXT, arg2, 0, 0, 0, 0);
         }
     }
     if (autoScroll)
@@ -550,4 +572,107 @@ void CApiMonitorUIDlg::OnFileExit()
 void CApiMonitorUIDlg::OnOptionConfig()
 {
     ShellExecute(0, _T("open"), _T("notepad.exe"), DllFilterConfig::GetConfig()->GetConfigPath(), DllFilterConfig::GetConfig()->GetConfigDir(), SW_NORMAL);
+}
+
+
+void CApiMonitorUIDlg::OnNMRClickTreeModules(NMHDR *pNMHDR, LRESULT *pResult)
+{
+    // TODO: Add your message handler code here and/or call default
+
+    CPoint point, clPos;
+    GetCursorPos(&point);
+    clPos = point;
+    m_treeModuleList.ScreenToClient(&clPos);
+    HTREEITEM hItem = m_treeModuleList.HitTest(clPos);
+    if (hItem == NULL)
+        return; 
+
+    m_treeModuleList.GetTreeCtrl().SelectItem(hItem);
+    CMenu menu;
+    menu.LoadMenu(IDR_TREE_POP_MENU);
+    CMenu *pPopup = menu.GetSubMenu(0);
+    pPopup->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, this);
+    *pResult = 0;
+}
+
+bool CApiMonitorUIDlg::IsModuleFunctionSelected()
+{
+    auto hItem = m_treeModuleList.GetTreeCtrl().GetSelectedItem();
+    if (!hItem)
+        return false;
+    if (m_treeModuleList.GetTreeCtrl().ItemHasChildren(hItem))       // 模块不设断点
+        return false;
+
+    return true;
+}
+
+void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
+{
+    if (!IsModuleFunctionSelected())
+        return;
+
+    CSetBreakPointTimeDialog dlg(this);
+    if (IDOK != dlg.DoModal())
+        return;
+
+    int times = _wtoi(dlg.m_Times);
+    if (times <= 0)
+        return;
+
+    auto hItem = m_treeModuleList.GetTreeCtrl().GetSelectedItem();
+    if (!hItem)
+        return;
+
+    SetBreakConditionUI sbc;
+    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
+    sbc.invoke_time = times;
+    sbc.break_invoke_time = true;
+    auto it = m_BreakPoints.find(sbc);
+    m_BreakPoints.insert(it, sbc);
+
+    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, CString(_T("times == ")) + dlg.m_Times);
+}
+
+void CApiMonitorUIDlg::OnSetbreakpointAlways()
+{
+    if (!IsModuleFunctionSelected())
+        return;
+
+    auto hItem = m_treeModuleList.GetTreeCtrl().GetSelectedItem();
+    if (!hItem)
+        return;
+
+    SetBreakConditionUI sbc;
+    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
+    sbc.break_next_time = true;
+    auto it = m_BreakPoints.find(sbc);
+    m_BreakPoints.insert(it, sbc);
+
+    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Next Time"));
+}
+
+void CApiMonitorUIDlg::OnUpdateSetBreakPointMeetHitTime(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnSetBreakPointDelete()
+{
+    if (!IsModuleFunctionSelected())
+        return;
+
+    auto hItem = m_treeModuleList.GetTreeCtrl().GetSelectedItem();
+    if (!hItem)
+        return;
+
+    SetBreakConditionUI sbc;
+    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
+    m_BreakPoints.erase(sbc);
+
+    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T(""));
 }
