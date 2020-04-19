@@ -253,7 +253,8 @@ namespace msg
         long long           call_from{ 0 };
         unsigned long long  raw_args[3]{ 0,0,0 };
         long                times{ 0 };
-        long                dummy_id{ 0 };
+        long                secret{ 0 };
+        bool                wait_reply{ false };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -266,7 +267,7 @@ namespace msg
             SerialItem(vec, raw_args[1]);
             SerialItem(vec, raw_args[2]);
             SerialItem(vec, times);
-            SerialItem(vec, dummy_id);
+            SerialItem(vec, wait_reply);
             CalFinalLength(vec);
             return vec;
         }
@@ -280,26 +281,26 @@ namespace msg
             idx = ExtractItem(str, idx, raw_args[1]);
             idx = ExtractItem(str, idx, raw_args[2]);
             idx = ExtractItem(str, idx, times);
-            idx = ExtractItem(str, idx, dummy_id);
+            idx = ExtractItem(str, idx, wait_reply);
         }
     };
 
     struct ApiInvokedReply
     {
-        long                dummy_id{ 0 };
+        long                secret{ 0 };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
             std::vector<char, Allocator::allocator<char>> vec;
             SerialInit(vec);
-            SerialItem(vec, dummy_id);
+            SerialItem(vec, secret);
             CalFinalLength(vec);
             return vec;
         }
         void Unserial(std::vector<char, Allocator::allocator<char>>& str)
         {
             size_t idx = GetFirstItemIndex(str);
-            idx = ExtractItem(str, idx, dummy_id);
+            idx = ExtractItem(str, idx, secret);
         }
     };
 

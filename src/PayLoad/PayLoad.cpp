@@ -421,12 +421,13 @@ RETRY_READ:
             Vlog("[PipeLine::ReadThread] read bytes: " << bytesRead);
 
             // 解析
+            const intptr_t totalBytes = partialMsgSize;
             PipeDefine::Message* ptr = (PipeDefine::Message*)tmpBuffer.data();
-            while ((intptr_t)ptr - (intptr_t)tmpBuffer.data() < partialMsgSize)
+            while ((intptr_t)ptr - (intptr_t)tmpBuffer.data() < totalBytes && partialMsgSize > 0)
             {
                 if (partialMsgSize < PipeDefine::Message::HeaderLength || partialMsgSize < ptr->ContentSize + PipeDefine::Message::HeaderLength)
                 {
-                    Vlog("[PipeLine::ReadThread] message too short, size: " << tmpBuffer.size() << ", err: " << param->f_GetLastError());
+                    Vlog("[PipeLine::ReadThread] message too short, size: " << partialMsgSize << ", err: " << param->f_GetLastError());
                     break;
                 }
                 if (ptr->type < 0 || ptr->type >= PipeDefine::Pipe_Msg_Total)
@@ -557,9 +558,6 @@ public:
             msgApiInvoke.raw_args[0] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 1);
             msgApiInvoke.raw_args[1] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 2);
             msgApiInvoke.raw_args[2] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 3);
-            msgApiInvoke.dummy_id = GetGlobalId();
-            auto content = msgApiInvoke.Serial();
-            PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
 
             if (e->mFuncName == "ExitProcess")
             {
@@ -591,19 +589,36 @@ public:
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_NEXT_TIME;
                 Vlog("[CommonHookFunction] int 3(next)");
+                msgApiInvoke.wait_reply = true;
+                msgApiInvoke.secret = GetGlobalId();
                 __asm int 3
             }
             if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == (LPVOID)e->mParams.mBreakCallFromAddr)
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 Vlog("[CommonHookFunction] int 3(addr)");
+                msgApiInvoke.wait_reply = true;
+                msgApiInvoke.secret = GetGlobalId();
                 __asm int 3
             }
             if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME) && e->mParams.mInvokeCount == e->mParams.mBreakReachInvokeTime + 1) // 从 0 计数
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
                 Vlog("[CommonHookFunction] int 3(time)");
+                msgApiInvoke.wait_reply = true;
+                msgApiInvoke.secret = GetGlobalId();
                 __asm int 3
+            }
+            auto content = msgApiInvoke.Serial();
+            PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
+
+            if (msgApiInvoke.wait_reply)
+            {
+                PipeDefine::PipeMsg type;
+                PipeLine::msPipe->Recv(type, content);
+                PipeDefine::msg::ApiInvokedReply rly;
+                rly.Unserial(content);
+                Vlog("[HookEntries::CommonHookFunction] reply: " << rly.secret);
             }
         }
     }

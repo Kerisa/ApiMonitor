@@ -327,6 +327,22 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 msg2->ContentSize = str.size();
                 memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
                 *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
+
+                if (pc->outputdbgstr != 0)
+                {
+                    PipeDefine::msg::SetBreakCondition m1;
+                    m1.func_addr = pc->outputdbgstr;
+                    m1.break_next_time = true;
+                    str = m1.Serial();
+                    PipeDefine::Message* msg3 = (PipeDefine::Message*)(writeData + msg2->HeaderLength + msg2->ContentSize);
+                    msg3->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
+                    msg3->tid = -1;
+                    msg3->ContentSize = str.size();
+                    memcpy_s(msg3->Content, maxWriteBuffer, str.data(), str.size());
+                    *writeDataSize += msg3->HeaderLength + msg3->ContentSize;
+                    printf("condition sent!\n");
+                    pc->outputdbgstr = 0;
+                }
             }
             break;
         }
@@ -344,17 +360,20 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             al.mRawArgs[1] = m.raw_args[1];
             al.mRawArgs[2] = m.raw_args[2];
             dlg->AppendApiCallLog(&al);
-            //dlg->CheckBreakCondition(&al);
-            //PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-            //msg2->type = PipeDefine::Pipe_S_Ack_ApiInvoked;
-            //msg2->tid = msg->tid;
-            //PipeDefine::msg::ApiInvokedReply rly;
-            //rly.dummy_id = m.dummy_id;
-            //str = rly.Serial();
-            //msg2->ContentSize = str.size();
-            //memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-            //*writeDataSize += msg2->HeaderLength + msg2->ContentSize;
-            //TRACE("[%d] %s.%05d,seed=%d\n", al.mTid, al.mApiName.c_str(), al.mTimes, rly.dummy_id);
+            if (m.wait_reply)
+            {
+                dlg->CheckBreakCondition(&al);
+                PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+                msg2->type = PipeDefine::Pipe_S_Ack_ApiInvoked;
+                msg2->tid = msg->tid;
+                PipeDefine::msg::ApiInvokedReply rly;
+                rly.secret = m.secret;
+                str = rly.Serial();
+                msg2->ContentSize = str.size();
+                memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+                *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
+                //TRACE("[%d] %s.%05d,seed=%d\n", al.mTid, al.mApiName.c_str(), al.mTimes, rly.dummy_id);
+            }
             break;
         }
         default:
