@@ -182,7 +182,7 @@ int Monitor::LoadFile(const std::wstring& filePath)
     assert(bytesOfNtMapViewOfSectionPad[5] == '\xba');  // mov edx,offset XXX
     param.f_Wow64SystemServiceCall = (LPVOID)*(PDWORD)&bytesOfNtMapViewOfSectionPad[6];
     assert(*(PWORD)&bytesOfNtMapViewOfSectionPad[10] == 0xd2ff);  // call edx
-
+    assert(param.f_Wow64SystemServiceCall != 0);
     PVOID oep = Detail::BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
     WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);

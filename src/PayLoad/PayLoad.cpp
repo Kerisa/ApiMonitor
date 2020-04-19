@@ -63,6 +63,7 @@ public:
     }
 
     SStream& operator<<(unsigned int i) { return operator<<(static_cast<unsigned long>(i)); }
+    SStream& operator<<(long long i) { return operator<<(static_cast<__int64>(i)); }
     SStream& operator<<(HMODULE i) { return operator<<(static_cast<void*>(i)); }
     const char* str() const { return mBuf; }
 private:
@@ -700,7 +701,7 @@ void ProcessCmd(const PipeDefine::Message* msg)
 }
 
 
-ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName)
+ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PVOID oldRvaPtr, const char* funcName, const PipeDefine::msg::ApiFilter::Api* filter)
 {
     Vlog("[AddHookRoutine] module: " << hmod << ", name: " << funcName << ", entry: " << oldEntry << ", rva: " << (LPVOID)*(PDWORD)oldRvaPtr);
     HookEntries::Entry* e = HookEntries::msEntries.AddEntry();
@@ -711,7 +712,29 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
     }
     e->mModuleName.assign(modname);
     e->mFuncName = funcName;
-    e->mOriginalVA = (ULONG_PTR)hmod + (ULONG_PTR)*(PDWORD)oldRvaPtr;    
+    e->mOriginalVA = (ULONG_PTR)hmod + (ULONG_PTR)*(PDWORD)oldRvaPtr;
+
+    // 设置断点信息
+    if (filter && filter->func_addr == (long long)oldEntry)
+    {
+        if (filter->bc_call_from)
+        {
+            Vlog("[AddHookRoutine] break when call from " << filter->call_from);
+            e->mParams.mBreakCallFromAddr = filter->call_from;
+            e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
+        }
+        if (filter->bc_invoke_time)
+        {
+            Vlog("[AddHookRoutine] break when reach time " << filter->invoke_time);
+            e->mParams.mBreakReachInvokeTime = filter->invoke_time;
+            e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
+        }
+        if (filter->bc_next_time)
+        {
+            Vlog("[AddHookRoutine] break at next call");
+            e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
+        }
+    }
 
     if (strcmp(funcName, "LdrLoadDll"))
     {
@@ -809,11 +832,22 @@ void CheckDataExportOrForwardApi(bool& dataExp, bool& forwardApi, DWORD rvafunc,
     }
 }
 
-void HookModuleExportTable(HMODULE hmod, const string& modname, const string& modpath)
+void HookModuleExportTable(HMODULE hmod, const string& modname, const string& modpath, const PipeDefine::msg::ApiFilter& filter)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    bool apply_filter = (filter.module_name == modname);
+    Vlog("[HookModuleExportTable] enter, hmod: " << (LPVOID)hmod << ", apply filter: " << apply_filter);
 
-    Vlog("[HookModuleExportTable] enter, hmod: " << (LPVOID)hmod);
+    std::map<long long, PipeDefine::msg::ApiFilter::Api, std::less<long long>, Allocator::allocator<std::pair<long long, PipeDefine::msg::ApiFilter::Api>>> filter_apis;
+    if (apply_filter)
+    {
+        Vlog("[HookModuleExportTable] build filter api set");
+        for (size_t i = 0; i < filter.apis.size(); ++i)
+        {
+            filter_apis.insert(std::make_pair(filter.apis[i].func_addr, filter.apis[i]));
+        }
+    }
+
     const char* lpImage = (const char*)hmod;
     PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
     PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
@@ -890,7 +924,18 @@ void HookModuleExportTable(HMODULE hmod, const string& modname, const string& mo
 
         if (strcmp(funcName, "LdrLoadDll"))
         {
-            ULONG_PTR newRva = AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName);
+            PVOID va = (PVOID)(lpImage + oldFunc[i]);
+            PipeDefine::msg::ApiFilter::Api* fa = nullptr;
+            if (apply_filter)
+            {
+                auto it = filter_apis.find((long long)va);
+                if (it != filter_apis.end())
+                    fa = &it->second;
+            }
+            bool hook = fa ? fa->filter : true;
+            if (!hook)
+                Vlog("[HookModuleExportTable] skip hook " << funcName << " due to filter");
+            ULONG_PTR newRva = hook ? AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName, fa) : 0;
             if (newRva)
                 newFunc[i] = newRva;
             else
@@ -1059,16 +1104,16 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
     auto content = msgModuleApis.Serial();
     PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
 
+    PipeDefine::msg::ApiFilter filter;
     if (checkPipeReply)
     {
         PipeDefine::PipeMsg recv_type;
         content.clear();
         PipeLine::msPipe->Recv(recv_type, content);
-        PipeDefine::msg::ApiFilter filter;
         filter.Unserial(content);
         Vlog("[DoModuleHook] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
     }
-    HookModuleExportTable(hmod, moduleName, path);
+    HookModuleExportTable(hmod, moduleName, path, filter);
 
     g_HookManager->AppendHookedModule(hmod);
     return true;

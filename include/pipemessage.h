@@ -147,8 +147,13 @@ namespace msg
         Allocator::string module_name;
         struct Api
         {
-            Allocator::string api_name;
-            bool              filter{ false };
+            long long   func_addr           { 0 };       // VA
+            bool        filter              { false };
+            bool        bc_next_time        { false };
+            bool        bc_call_from        { false };
+            bool        bc_invoke_time      { false };
+            long        invoke_time         { 0 };
+            long long   call_from           { 0 };
         };
         std::vector<Api, Allocator::allocator<Api>> apis;
 
@@ -161,8 +166,13 @@ namespace msg
             SerialItem(vec, s);
             for (size_t i = 0; i < apis.size(); ++i)
             {
-                SerialItem(vec, apis[i].api_name);
+                SerialItem(vec, apis[i].func_addr);
                 SerialItem(vec, apis[i].filter);
+                SerialItem(vec, apis[i].bc_next_time);
+                SerialItem(vec, apis[i].bc_call_from);
+                SerialItem(vec, apis[i].bc_invoke_time);
+                SerialItem(vec, apis[i].invoke_time);
+                SerialItem(vec, apis[i].call_from);
             }
             CalFinalLength(vec);
             return vec;
@@ -177,8 +187,13 @@ namespace msg
             for (size_t i = 0; i < array_count; ++i)
             {
                 Api& a = apis[i];
-                idx = ExtractItem(str, idx, a.api_name);
+                idx = ExtractItem(str, idx, a.func_addr);
                 idx = ExtractItem(str, idx, a.filter);
+                idx = ExtractItem(str, idx, a.bc_next_time);
+                idx = ExtractItem(str, idx, a.bc_call_from);
+                idx = ExtractItem(str, idx, a.bc_invoke_time);
+                idx = ExtractItem(str, idx, a.invoke_time);
+                idx = ExtractItem(str, idx, a.call_from);
             }
         }
     };
@@ -254,7 +269,7 @@ namespace msg
         unsigned long long  raw_args[3]{ 0,0,0 };
         long                times{ 0 };
         long                secret{ 0 };
-        bool                wait_reply{ false };
+        bool                wait_reply{ false };        // ´¥·¢¶Ïµã
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {

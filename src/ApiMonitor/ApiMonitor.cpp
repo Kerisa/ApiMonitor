@@ -219,7 +219,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             for (size_t i = 0; i < m.apis.size(); ++i)
             {
                 PipeDefine::msg::ApiFilter::Api filter_api;
-                filter_api.api_name = m.apis[i].name;
+                filter_api.func_addr = m.apis[i].va;
                 filter_api.filter = true;
                 filter.apis.push_back(filter_api);
             }

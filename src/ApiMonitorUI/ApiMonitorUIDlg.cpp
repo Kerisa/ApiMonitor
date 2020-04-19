@@ -316,8 +316,13 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 for (size_t i = 0; i < me.mApis.size(); ++i)
                 {
                     PipeDefine::msg::ApiFilter::Api filter_api;
-                    filter_api.api_name = me.mApis[i].mName;
+                    filter_api.func_addr = me.mApis[i].mVa;
                     filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
+                    if (filter_api.func_addr == pc->outputdbgstr)
+                    {
+                        filter_api.bc_next_time = true;
+                    }
+
                     filter.apis.push_back(filter_api);
                 }
                 str = filter.Serial();
@@ -328,21 +333,21 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
                 *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
 
-                if (pc->outputdbgstr != 0)
-                {
-                    PipeDefine::msg::SetBreakCondition m1;
-                    m1.func_addr = pc->outputdbgstr;
-                    m1.break_next_time = true;
-                    str = m1.Serial();
-                    PipeDefine::Message* msg3 = (PipeDefine::Message*)(writeData + msg2->HeaderLength + msg2->ContentSize);
-                    msg3->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
-                    msg3->tid = -1;
-                    msg3->ContentSize = str.size();
-                    memcpy_s(msg3->Content, maxWriteBuffer, str.data(), str.size());
-                    *writeDataSize += msg3->HeaderLength + msg3->ContentSize;
-                    printf("condition sent!\n");
-                    pc->outputdbgstr = 0;
-                }
+                //if (pc->outputdbgstr != 0)
+                //{
+                //    PipeDefine::msg::SetBreakCondition m1;
+                //    m1.func_addr = pc->outputdbgstr;
+                //    m1.break_next_time = true;
+                //    str = m1.Serial();
+                //    PipeDefine::Message* msg3 = (PipeDefine::Message*)(writeData + msg2->HeaderLength + msg2->ContentSize);
+                //    msg3->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
+                //    msg3->tid = -1;
+                //    msg3->ContentSize = str.size();
+                //    memcpy_s(msg3->Content, maxWriteBuffer, str.data(), str.size());
+                //    *writeDataSize += msg3->HeaderLength + msg3->ContentSize;
+                //    printf("condition sent!\n");
+                //    pc->outputdbgstr = 0;
+                //}
             }
             break;
         }
