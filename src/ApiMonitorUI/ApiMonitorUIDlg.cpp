@@ -264,9 +264,12 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         return;
     }
 
+    *writeDataSize = 0;
+    uint8_t* originalWriteData = writeData;
     PipeDefine::Message* msg = (PipeDefine::Message*)readData;
     while ((const uint8_t *)msg - readData < readDataSize)
     {
+        bool isUnknown = false;
         switch (msg->type)
         {
         case PipeDefine::Pipe_C_Req_Inited: {
@@ -280,7 +283,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             msg2->tid = msg->tid;
             msg2->ContentSize = str.size();
             memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+            *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
             break;
         }
         case PipeDefine::Pipe_C_Req_ModuleApiList: {
@@ -323,7 +326,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 msg2->tid = msg->tid;
                 msg2->ContentSize = str.size();
                 memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-                *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+                *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
             }
             break;
         }
@@ -341,12 +344,17 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             al.mRawArgs[1] = m.raw_args[1];
             al.mRawArgs[2] = m.raw_args[2];
             dlg->AppendApiCallLog(&al);
-            //dlg->CheckBreakCondition(&al);
-            //PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-            //msg2->type = PipeDefine::Pipe_S_Ack_ApiInvoked;
-            //msg2->tid = msg->tid;
-            //msg2->ContentSize = 0;
-            //*writeDataSize = msg2->HeaderLength + msg2->ContentSize;
+            dlg->CheckBreakCondition(&al);
+            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+            msg2->type = PipeDefine::Pipe_S_Ack_ApiInvoked;
+            msg2->tid = msg->tid;
+            PipeDefine::msg::ApiInvokedReply rly;
+            rly.dummy_id = m.dummy_id;
+            str = rly.Serial();
+            msg2->ContentSize = str.size();
+            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+            *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
+            TRACE("[%d] %s.%05d,seed=%d\n", al.mTid, al.mApiName.c_str(), al.mTimes, rly.dummy_id);
             break;
         }
         default:
@@ -355,8 +363,10 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             break;
         }
 
+        writeData = originalWriteData + (*writeDataSize);
         msg = (PipeDefine::Message*)((intptr_t)msg + PipeDefine::Message::HeaderLength + msg->ContentSize);
     }
+    TRACE("Write: %d bytes\n", *writeDataSize);
 }
 
 
