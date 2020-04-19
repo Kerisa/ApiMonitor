@@ -591,7 +591,7 @@ public:
                 Vlog("[CommonHookFunction] int 3(next)");
                 msgApiInvoke.wait_reply = true;
                 msgApiInvoke.secret = GetGlobalId();
-                __asm int 3
+                //__asm int 3
             }
             if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == (LPVOID)e->mParams.mBreakCallFromAddr)
             {
