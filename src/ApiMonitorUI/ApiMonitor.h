@@ -20,6 +20,7 @@ struct ModuleInfoItem
         PipeDefine::msg::SetBreakCondition  mBp;
 
         void        BreakAlways();
+        void        BreakNextTime();
         void        BreakOnTime(int time);
         void        RemoveBp();
         std::string GetBpDescription() const;

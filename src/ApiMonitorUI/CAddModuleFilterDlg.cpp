@@ -45,6 +45,7 @@ BEGIN_MESSAGE_MAP(CAddModuleFilterDlg, CDialogEx)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_ALWAYS, &CAddModuleFilterDlg::OnSetbreakpointAlways)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_MEETHITTIME, &CAddModuleFilterDlg::OnSetbreakpointMeethittime)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_DELETE, &CAddModuleFilterDlg::OnSetbreakpointDelete)
+    ON_COMMAND(ID_SETBREAKPOINT_NEXTTIME, &CAddModuleFilterDlg::OnSetbreakpointNexttime)
 END_MESSAGE_MAP()
 
 
@@ -274,6 +275,24 @@ void CAddModuleFilterDlg::OnSetbreakpointDelete()
     m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
     ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
     mModuleInfoItem->mApis[index].RemoveBp();
+
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+}
+
+void CAddModuleFilterDlg::OnSetbreakpointNexttime()
+{
+    POSITION pos = m_listModuleApis.GetFirstSelectedItemPosition();
+    int index = m_listModuleApis.GetNextSelectedItem(pos);
+    if (index < 0)
+        return;
+
+    if (index >= mModuleInfoItem->mApis.size())
+        return;
+
+    TCHAR buffer[512];
+    m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
+    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
+    mModuleInfoItem->mApis[index].BreakNextTime();
 
     m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
 }

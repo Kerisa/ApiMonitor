@@ -45,4 +45,5 @@ public:
     afx_msg void OnSetbreakpointAlways();
     afx_msg void OnSetbreakpointMeethittime();
     afx_msg void OnSetbreakpointDelete();
+    afx_msg void OnSetbreakpointNexttime();
 };

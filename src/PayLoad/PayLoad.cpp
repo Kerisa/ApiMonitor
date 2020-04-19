@@ -505,9 +505,11 @@ public:
             static constexpr DWORD FLAG_BREAK_NEXT_TIME              = 1 << 0;
             static constexpr DWORD FLAG_BREAK_WHEN_CALL_FROM         = 1 << 1;
             static constexpr DWORD FLAG_BREAK_WHEN_REACH_INVOKE_TIME = 1 << 2;
-            static constexpr DWORD FLAG_CLEAR_NEXT_TIME              = 1 << 5;
-            static constexpr DWORD FLAG_CLEAR_WHEN_CALL_FROM         = 1 << 6;
-            static constexpr DWORD FLAG_CLEAR_WHEN_REACH_INVOKE_TIME = 1 << 7;
+            static constexpr DWORD FLAG_BREAK_ALWAYS                 = 1 << 3;
+            static constexpr DWORD FLAG_CLEAR_BP_NEXT_TIME           = 1 << 4;
+            static constexpr DWORD FLAG_CLEAR_BP_ALWAYS              = 1 << 5;
+            static constexpr DWORD FLAG_CLEAR_BP_CALL_FROM           = 1 << 6;
+            static constexpr DWORD FLAG_CLEAR_BP_REACH_INVOKE_TIME   = 1 << 7;
             long     mInvokeCount{ 0 };
             DWORD    mFlag{ 0 };
             long     mBreakReachInvokeTime{ 0 };
@@ -567,20 +569,20 @@ public:
             }
 
             // 清除断点
-            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_NEXT_TIME)
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_BP_NEXT_TIME)
             {
-                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_NEXT_TIME;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_BP_NEXT_TIME;
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_NEXT_TIME;
             }
-            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_WHEN_CALL_FROM)
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_BP_CALL_FROM)
             {
-                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_WHEN_CALL_FROM;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_BP_CALL_FROM;
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 e->mParams.mBreakCallFromAddr = 0;
             }
-            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_WHEN_REACH_INVOKE_TIME)
+            if (e->mParams.mFlag & Entry::Param::FLAG_CLEAR_BP_REACH_INVOKE_TIME)
             {
-                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_WHEN_REACH_INVOKE_TIME;
+                e->mParams.mFlag &= ~Entry::Param::FLAG_CLEAR_BP_REACH_INVOKE_TIME;
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
                 e->mParams.mBreakReachInvokeTime = 0;
             }
@@ -594,13 +596,21 @@ public:
                 msgApiInvoke.secret = GetGlobalId();
                 //__asm int 3
             }
+            if (e->mParams.mFlag & Entry::Param::FLAG_BREAK_ALWAYS)
+            {
+                // 不清除 flag
+                Vlog("[CommonHookFunction] int 3(always)");
+                msgApiInvoke.wait_reply = true;
+                msgApiInvoke.secret = GetGlobalId();
+                //__asm int 3
+            }
             if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_CALL_FROM) && call_from == (LPVOID)e->mParams.mBreakCallFromAddr)
             {
                 e->mParams.mFlag &= ~Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 Vlog("[CommonHookFunction] int 3(addr)");
                 msgApiInvoke.wait_reply = true;
                 msgApiInvoke.secret = GetGlobalId();
-                __asm int 3
+                //__asm int 3
             }
             if ((e->mParams.mFlag & Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME) && e->mParams.mInvokeCount == e->mParams.mBreakReachInvokeTime + 1) // 从 0 计数
             {
@@ -608,7 +618,7 @@ public:
                 Vlog("[CommonHookFunction] int 3(time)");
                 msgApiInvoke.wait_reply = true;
                 msgApiInvoke.secret = GetGlobalId();
-                __asm int 3
+                //__asm int 3
             }
             auto content = msgApiInvoke.Serial();
             PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
@@ -692,6 +702,10 @@ void ProcessCmd(const PipeDefine::Message* msg)
                 {
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
                 }
+                if (sbc.break_always)
+                {
+                    e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_ALWAYS;
+                }
                 break;
             }
         }
@@ -733,6 +747,11 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
         {
             Vlog("[AddHookRoutine] break at next call");
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
+        }
+        if (filter->bc_always)
+        {
+            Vlog("[AddHookRoutine] break always");
+            e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_ALWAYS;
         }
     }
 

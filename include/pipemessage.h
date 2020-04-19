@@ -149,6 +149,7 @@ namespace msg
         {
             long long   func_addr           { 0 };       // VA
             bool        filter              { false };
+            bool        bc_always           { false };
             bool        bc_next_time        { false };
             bool        bc_call_from        { false };
             bool        bc_invoke_time      { false };
@@ -168,6 +169,7 @@ namespace msg
             {
                 SerialItem(vec, apis[i].func_addr);
                 SerialItem(vec, apis[i].filter);
+                SerialItem(vec, apis[i].bc_always);
                 SerialItem(vec, apis[i].bc_next_time);
                 SerialItem(vec, apis[i].bc_call_from);
                 SerialItem(vec, apis[i].bc_invoke_time);
@@ -189,6 +191,7 @@ namespace msg
                 Api& a = apis[i];
                 idx = ExtractItem(str, idx, a.func_addr);
                 idx = ExtractItem(str, idx, a.filter);
+                idx = ExtractItem(str, idx, a.bc_always);
                 idx = ExtractItem(str, idx, a.bc_next_time);
                 idx = ExtractItem(str, idx, a.bc_call_from);
                 idx = ExtractItem(str, idx, a.bc_invoke_time);
@@ -303,6 +306,7 @@ namespace msg
     struct ApiInvokedReply
     {
         long                secret{ 0 };
+        // 可附加断点更新信息
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -323,6 +327,7 @@ namespace msg
     struct SetBreakCondition
     {
         long long func_addr{ 0 };
+        bool break_always{ false };
         bool break_next_time{ false };
         bool break_call_from{ false };
         bool break_invoke_time{ false };
@@ -334,6 +339,7 @@ namespace msg
             std::vector<char, Allocator::allocator<char>> vec;
             SerialInit(vec);
             SerialItem(vec, func_addr);
+            SerialItem(vec, break_always);
             SerialItem(vec, break_next_time);
             SerialItem(vec, break_call_from);
             SerialItem(vec, break_invoke_time);
@@ -346,6 +352,7 @@ namespace msg
         {
             size_t idx = GetFirstItemIndex(str);
             idx = ExtractItem(str, idx, func_addr);
+            idx = ExtractItem(str, idx, break_always);
             idx = ExtractItem(str, idx, break_next_time);
             idx = ExtractItem(str, idx, break_call_from);
             idx = ExtractItem(str, idx, break_invoke_time);

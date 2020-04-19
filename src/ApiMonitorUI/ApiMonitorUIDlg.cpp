@@ -127,6 +127,7 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_COMMAND(ID_SETBREAKPOINT_ALWAYS, &CApiMonitorUIDlg::OnSetbreakpointAlways)
     ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_ALWAYS, &CApiMonitorUIDlg::OnUpdateSetbreakpointAlways)
     ON_COMMAND(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnSetBreakPointDelete)
+    ON_COMMAND(ID_SETBREAKPOINT_NEXTTIME, &CApiMonitorUIDlg::OnSetbreakpointNexttime)
 END_MESSAGE_MAP()
 
 
@@ -317,15 +318,16 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 for (size_t i = 0; i < me.mApis.size(); ++i)
                 {
                     PipeDefine::msg::ApiFilter::Api filter_api;
-                    filter_api.func_addr = me.mApis[i].mVa;
-                    filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
+                    filter_api.func_addr        = me.mApis[i].mVa;
+                    filter_api.filter           = me.mApis[i].mIsHook;        // 由 UI 更新
                     
-                    filter_api.bc_next_time = me.mApis[i].mBp.break_next_time;
-                    filter_api.bc_call_from = me.mApis[i].mBp.break_call_from;
-                    filter_api.bc_invoke_time = me.mApis[i].mBp.break_invoke_time;
-                    filter_api.call_from = me.mApis[i].mBp.call_from;
-                    filter_api.func_addr = me.mApis[i].mBp.func_addr;
-                    filter_api.invoke_time = me.mApis[i].mBp.invoke_time;
+                    filter_api.bc_always        = me.mApis[i].mBp.break_always;
+                    filter_api.bc_next_time     = me.mApis[i].mBp.break_next_time;
+                    filter_api.bc_call_from     = me.mApis[i].mBp.break_call_from;
+                    filter_api.bc_invoke_time   = me.mApis[i].mBp.break_invoke_time;
+                    filter_api.call_from        = me.mApis[i].mBp.call_from;
+                    filter_api.func_addr        = me.mApis[i].mBp.func_addr;
+                    filter_api.invoke_time      = me.mApis[i].mBp.invoke_time;
 
                     filter.apis.push_back(filter_api);
                 }
@@ -668,7 +670,7 @@ void CApiMonitorUIDlg::OnSetbreakpointAlways()
 
     SetBreakConditionUI sbc;
     sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
-    sbc.break_next_time = true;
+    sbc.break_always = true;
     auto it = m_BreakPoints.find(sbc);
     m_BreakPoints.insert(it, sbc);
 
@@ -699,4 +701,23 @@ void CApiMonitorUIDlg::OnSetBreakPointDelete()
     m_BreakPoints.erase(sbc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T(""));
+}
+
+
+void CApiMonitorUIDlg::OnSetbreakpointNexttime()
+{
+    if (!IsModuleFunctionSelected())
+        return;
+
+    auto hItem = m_treeModuleList.GetTreeCtrl().GetSelectedItem();
+    if (!hItem)
+        return;
+
+    SetBreakConditionUI sbc;
+    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
+    sbc.break_next_time = true;
+    auto it = m_BreakPoints.find(sbc);
+    m_BreakPoints.insert(it, sbc);
+
+    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Next Time"));
 }

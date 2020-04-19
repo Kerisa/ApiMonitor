@@ -230,6 +230,12 @@ int Monitor::LoadFile(const std::wstring& filePath)
 void ModuleInfoItem::ApiEntry::BreakAlways()
 {
     RemoveBp();
+    mBp.break_always = true;
+}
+
+void ModuleInfoItem::ApiEntry::BreakNextTime()
+{
+    RemoveBp();
     mBp.break_next_time = true;
 }
 
@@ -250,8 +256,10 @@ void ModuleInfoItem::ApiEntry::RemoveBp()
 std::string ModuleInfoItem::ApiEntry::GetBpDescription() const
 {
     assert(mBp.break_next_time + mBp.break_call_from + mBp.break_invoke_time <= 1);
-    if (mBp.break_next_time)
+    if (mBp.break_always)
         return "Always";
+    else if (mBp.break_next_time)
+        return "Next Time";
     else if (mBp.break_invoke_time)
     {
         std::stringstream ss;

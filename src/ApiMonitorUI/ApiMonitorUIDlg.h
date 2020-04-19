@@ -84,4 +84,5 @@ public:
     afx_msg void OnSetbreakpointAlways();
     afx_msg void OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI);
     afx_msg void OnSetBreakPointDelete();
+    afx_msg void OnSetbreakpointNexttime();
 };
