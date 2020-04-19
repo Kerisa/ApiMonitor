@@ -99,6 +99,22 @@ typedef LONG (NTAPI * FN_NtDelayExecution)(
     BOOLEAN              Alertable,
     PLARGE_INTEGER       Interval);
 
+typedef LONG (NTAPI* FN_NtCreateThreadEx)(
+     PHANDLE hThread,
+     ACCESS_MASK DesiredAccess,
+     PVOID ObjectAttributes,
+     HANDLE ProcessHandle,
+     PVOID lpStartAddress,
+     PVOID lpParameter,
+     ULONG Flags,
+     SIZE_T StackZeroBits,
+     SIZE_T SizeOfStackCommit,
+     SIZE_T SizeOfStackReserve,
+     PVOID lpBytesBuffer);
+
+typedef BOOL (NTAPI * FN_RtlTryEnterCriticalSection)(
+    RTL_CRITICAL_SECTION* crit);
+
 typedef FARPROC(WINAPI * FN_GetProcAddress)(
     HMODULE hModule,
     LPCSTR  lpProcName);
@@ -129,14 +145,6 @@ typedef BOOL(WINAPI * FN_SetThreadContext)(
 
 typedef BOOL(WINAPI * FN_CloseHandle)(
     HANDLE hObject);
-
-typedef HANDLE(WINAPI * FN_CreateThread)(
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    SIZE_T dwStackSize,
-    LPTHREAD_START_ROUTINE lpStartAddress,
-    LPVOID lpParameter,
-    DWORD dwCreationFlags,
-    LPDWORD lpThreadId);
 
 typedef VOID (WINAPI * FN_OutputDebugStringA)(
     LPCSTR lpOutputString);
@@ -252,6 +260,8 @@ struct PARAM
     FN_RtlLeaveCriticalSection      f_RtlLeaveCriticalSection;
     FN_LdrGetDllFullName            f_LdrGetDllFullName;
     FN_NtDelayExecution             f_NtDelayExecution;
+    FN_NtCreateThreadEx             f_NtCreateThreadEx;
+    FN_RtlTryEnterCriticalSection   f_RtlTryEnterCriticalSection;
 
     // kernelbase
     FN_GetModuleHandleA          f_GetModuleHandleA;
@@ -261,7 +271,6 @@ struct PARAM
     FN_SetThreadContext          f_SetThreadContext;
     FN_ResumeThread              f_ResumeThread;
     FN_CloseHandle               f_CloseHandle;
-    FN_CreateThread              f_CreateThread;
     FN_OutputDebugStringA        f_OutputDebugStringA;
 
     // kernel32

@@ -58,7 +58,7 @@ namespace Detail
     {
         BOOL fRead = FALSE;
         LPPIPEINST lpPipeInst = reinterpret_cast<LPPIPEINST>(lpOverLap);
-
+        assert((dwErr == 0) && (cbWritten == lpPipeInst->cbToWrite));
         if ((dwErr == 0) && (cbWritten == lpPipeInst->cbToWrite))
         {
             fRead = ReadFileEx(
@@ -93,6 +93,8 @@ namespace Detail
                 sizeof(lpPipeInst->chReply),
                 lpPipeInst->pUserData
             );
+
+            assert(lpPipeInst->cbToWrite < sizeof(lpPipeInst->chReply));
 
             fWrite = WriteFileEx(
                 lpPipeInst->hPipeInst,

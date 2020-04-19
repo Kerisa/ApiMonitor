@@ -306,22 +306,25 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             pc->mModuleApis.push_back(me);
             dlg->UpdateModuleList(&me);
 
-            PipeDefine::msg::ApiFilter filter;
-            filter.module_name = m.module_name;
-            for (size_t i = 0; i < me.mApis.size(); ++i)
+            if (!m.no_reply)
             {
-                PipeDefine::msg::ApiFilter::Api filter_api;
-                filter_api.api_name = me.mApis[i].mName;
-                filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
-                filter.apis.push_back(filter_api);
+                PipeDefine::msg::ApiFilter filter;
+                filter.module_name = m.module_name;
+                for (size_t i = 0; i < me.mApis.size(); ++i)
+                {
+                    PipeDefine::msg::ApiFilter::Api filter_api;
+                    filter_api.api_name = me.mApis[i].mName;
+                    filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
+                    filter.apis.push_back(filter_api);
+                }
+                str = filter.Serial();
+                PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
+                msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
+                msg2->tid = msg->tid;
+                msg2->ContentSize = str.size();
+                memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
+                *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
             }
-            str = filter.Serial();
-            PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
-            msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
-            msg2->tid = msg->tid;
-            msg2->ContentSize = str.size();
-            memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
-            *writeDataSize = msg2->HeaderLength + msg2->ContentSize;
             break;
         }
         case PipeDefine::Pipe_C_Req_ApiInvoked: {

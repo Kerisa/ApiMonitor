@@ -188,6 +188,7 @@ namespace msg
         Allocator::string module_name;
         Allocator::string module_path;
         long long         module_base{ false };
+        bool              no_reply{ false };
 
         struct ApiDetail
         {
@@ -207,6 +208,7 @@ namespace msg
             SerialItem(vec, module_name);
             SerialItem(vec, module_path);
             SerialItem(vec, module_base);
+            SerialItem(vec, no_reply);
             size_t s = apis.size();
             SerialItem(vec, s);
             for (size_t i = 0; i < apis.size(); ++i)
@@ -228,6 +230,7 @@ namespace msg
             idx = ExtractItem(str, idx, module_name);
             idx = ExtractItem(str, idx, module_path);
             idx = ExtractItem(str, idx, module_base);
+            idx = ExtractItem(str, idx, no_reply);
             idx = ExtractItem(str, idx, array_count);
             apis.resize(array_count);
             for (size_t i = 0; i < array_count; ++i)
@@ -250,7 +253,7 @@ namespace msg
         long long           call_from{ 0 };
         unsigned long long  raw_args[3]{ 0,0,0 };
         long                times{ 0 };
-        long                action{ 0 };
+        long                dummy_id{ 0 };
 
         std::vector<char, Allocator::allocator<char>> Serial()
         {
@@ -263,7 +266,7 @@ namespace msg
             SerialItem(vec, raw_args[1]);
             SerialItem(vec, raw_args[2]);
             SerialItem(vec, times);
-            SerialItem(vec, action);
+            SerialItem(vec, dummy_id);
             CalFinalLength(vec);
             return vec;
         }
@@ -277,9 +280,29 @@ namespace msg
             idx = ExtractItem(str, idx, raw_args[1]);
             idx = ExtractItem(str, idx, raw_args[2]);
             idx = ExtractItem(str, idx, times);
-            idx = ExtractItem(str, idx, action);
+            idx = ExtractItem(str, idx, dummy_id);
         }
     };
+
+    struct ApiInvokedReply
+    {
+        long                dummy_id{ 0 };
+
+        std::vector<char, Allocator::allocator<char>> Serial()
+        {
+            std::vector<char, Allocator::allocator<char>> vec;
+            SerialInit(vec);
+            SerialItem(vec, dummy_id);
+            CalFinalLength(vec);
+            return vec;
+        }
+        void Unserial(std::vector<char, Allocator::allocator<char>>& str)
+        {
+            size_t idx = GetFirstItemIndex(str);
+            idx = ExtractItem(str, idx, dummy_id);
+        }
+    };
+
 
     struct SetBreakCondition
     {

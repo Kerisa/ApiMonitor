@@ -14,6 +14,7 @@ using Allocator::string;
 
 PARAM* g_Param;
 
+#define THREAD_ALL_ACCESS         (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF) // MASK: 0x1FFFFF
 
 class SStream
 {
@@ -229,6 +230,26 @@ public:
         CRITICAL_SECTION* mCS{ nullptr };
     };
 
+    struct TryLock
+    {
+        TryLock(CRITICAL_SECTION* pcs)
+        {
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            mCS = pcs;
+            mEnter = param->f_RtlTryEnterCriticalSection(pcs);
+        }
+        bool IsEntered() { return mEnter; }
+        ~TryLock()
+        {
+            PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+            if (mEnter)
+                param->f_RtlLeaveCriticalSection(mCS);
+        }
+
+        bool mEnter{ false };
+        CRITICAL_SECTION* mCS{ nullptr };
+    };
+
     PipeLine()
     {
         mMsgReadBuffer = (ThreadMsgMap*)Allocator::Malloc(sizeof(ThreadMsgMap));
@@ -283,8 +304,9 @@ public:
         PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
         param->f_RtlInitializeCriticalSection(&csRead);
         param->f_RtlInitializeCriticalSection(&csWrite);
-        mWriteThreadHandle = param->f_CreateThread(0, 0, WriteThread, 0, 0, 0);
-        mReadThreadHandle = param->f_CreateThread(0, 0, ReadThread, 0, 0, 0);
+        HANDLE ThreadHandle = NULL;
+        param->f_NtCreateThreadEx(&mWriteThreadHandle, THREAD_ALL_ACCESS, NULL, NtCurrentProcess(), (LPTHREAD_START_ROUTINE)WriteThread, 0, FALSE, NULL, NULL, NULL, NULL);
+        param->f_NtCreateThreadEx(&mReadThreadHandle, THREAD_ALL_ACCESS, NULL, NtCurrentProcess(), (LPTHREAD_START_ROUTINE)ReadThread, 0, FALSE, NULL, NULL, NULL, NULL);
         Vlog("[PipeLine::CreateWorkThread] read-thread: " << mReadThreadHandle << ", write-thread: " << mWriteThreadHandle);
         mThreadLockInited = true;
         return true;
@@ -510,6 +532,11 @@ public:
             mFuncName.clear();
         }
     };
+    static long GetGlobalId()
+    {
+        static volatile long id = 0;
+        return _InlineInterlockedAdd(&id, 1);
+    }
     static void __stdcall CommonHookFunction(uint32_t self_index, ULONG_PTR addr_of_call_from_addr)
     {
         LPVOID call_from = *(LPVOID*)addr_of_call_from_addr;
@@ -530,6 +557,7 @@ public:
             msgApiInvoke.raw_args[0] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 1);
             msgApiInvoke.raw_args[1] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 2);
             msgApiInvoke.raw_args[2] = (unsigned long long)*((LPVOID*)addr_of_call_from_addr + 3);
+            msgApiInvoke.dummy_id = GetGlobalId();
             auto content = msgApiInvoke.Serial();
             PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ApiInvoked, content);
 
@@ -1012,6 +1040,7 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
 
     PipeDefine::msg::ModuleApis msgModuleApis;
     CollectModuleInfo(hmod, moduleName, path, msgModuleApis);
+    msgModuleApis.no_reply = !checkPipeReply;
     auto content = msgModuleApis.Serial();
     PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
 
@@ -1136,6 +1165,8 @@ void GetApis(bool ntdllOnly)
     GET_NTDLL_API(RtlLeaveCriticalSection);
     GET_NTDLL_API(LdrGetDllFullName);
     GET_NTDLL_API(NtDelayExecution);
+    GET_NTDLL_API(NtCreateThreadEx);
+    GET_NTDLL_API(RtlTryEnterCriticalSection);
     //GET_NTDLL_API(NtQueryInformationFile);
 
     if (ntdllOnly)
@@ -1150,7 +1181,6 @@ void GetApis(bool ntdllOnly)
     param->f_SetThreadContext = (FN_SetThreadContext)param->f_GetProcAddress((HMODULE)param->kernelBase, "SetThreadContext");
     param->f_ResumeThread = (FN_ResumeThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "ResumeThread");
     param->f_CloseHandle = (FN_CloseHandle)param->f_GetProcAddress((HMODULE)param->kernelBase, "CloseHandle");
-    param->f_CreateThread = (FN_CreateThread)param->f_GetProcAddress((HMODULE)param->kernelBase, "CreateThread");
     param->f_OutputDebugStringA = (FN_OutputDebugStringA)param->f_GetProcAddress((HMODULE)param->kernelBase, "OutputDebugStringA");
 
     param->kernel32 = (LPVOID)param->f_GetModuleHandleA("kernel32.dll");
@@ -1223,7 +1253,8 @@ DWORD WINAPI Recover(LPVOID pv)
 void ContinueExe()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
-    param->f_CreateThread(0, 0, Recover, 0, 0, 0);
+    HANDLE ThreadHandle = NULL;
+    param->f_NtCreateThreadEx(&ThreadHandle, THREAD_ALL_ACCESS, NULL, NtCurrentProcess(), (LPTHREAD_START_ROUTINE)Recover, 0, FALSE, NULL, NULL, NULL, NULL);
     while (1) {}
 }
 
