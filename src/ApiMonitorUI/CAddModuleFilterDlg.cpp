@@ -8,6 +8,7 @@
 #include "ApiMonitor.h"
 #include "uihelper.h"
 #include "config.h"
+#include "CSetBreakPointTimeDialog.h"
 
 // CAddModuleFilterDlg 对话框
 
@@ -40,11 +41,21 @@ BEGIN_MESSAGE_MAP(CAddModuleFilterDlg, CDialogEx)
     ON_WM_PAINT()
     ON_WM_QUERYDRAGICON()
     ON_BN_CLICKED(IDC_CHECK_ALL, &CAddModuleFilterDlg::OnBnClickedCheckAll)
+    ON_NOTIFY(NM_RCLICK, IDC_LIST1, &CAddModuleFilterDlg::OnNMRClickList1)
+    ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_ALWAYS, &CAddModuleFilterDlg::OnSetbreakpointAlways)
+    ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_MEETHITTIME, &CAddModuleFilterDlg::OnSetbreakpointMeethittime)
+    ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_DELETE, &CAddModuleFilterDlg::OnSetbreakpointDelete)
 END_MESSAGE_MAP()
 
 
 // CAddModuleFilterDlg 消息处理程序
 
+const int ListModuleApisColumn_No           = 0;
+const int ListModuleApisColumn_Name         = 1;
+const int ListModuleApisColumn_VA           = 2;
+const int ListModuleApisColumn_Forward      = 3;
+const int ListModuleApisColumn_Data         = 4;
+const int ListModuleApisColumn_BreakPoint   = 5;
 
 BOOL CAddModuleFilterDlg::OnInitDialog()
 {
@@ -76,11 +87,12 @@ BOOL CAddModuleFilterDlg::OnInitDialog()
     SetIcon(m_hIcon, FALSE);		// 设置小图标
 
     m_listModuleApis.SetExtendedStyle(LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_SIMPLESELECT);
-    m_listModuleApis.InsertColumn(0, _T("No."), LVCFMT_LEFT, 50, -1);
-    m_listModuleApis.InsertColumn(1, _T("Name"), LVCFMT_LEFT, 120, -1);
-    m_listModuleApis.InsertColumn(2, _T("VA"), LVCFMT_LEFT, 70, -1);
-    m_listModuleApis.InsertColumn(3, _T("Forward"), LVCFMT_LEFT, 120, -1);
-    m_listModuleApis.InsertColumn(4, _T("Data"), LVCFMT_LEFT, 50, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_No           , _T("No."),            LVCFMT_LEFT, 50, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_Name         , _T("Name"),           LVCFMT_LEFT, 120, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_VA           , _T("VA"),             LVCFMT_LEFT, 70, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_Forward      , _T("Forward"),        LVCFMT_LEFT, 120, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_Data         , _T("Data"),           LVCFMT_LEFT, 50, -1);
+    m_listModuleApis.InsertColumn(ListModuleApisColumn_BreakPoint   , _T("Break Point"),    LVCFMT_LEFT, 50, -1);
 
     ASSERT(mModuleInfoItem);
     m_editName.SetWindowText(ToCString(mModuleInfoItem->mName));
@@ -94,10 +106,10 @@ BOOL CAddModuleFilterDlg::OnInitDialog()
         CString name    = ToCString(mModuleInfoItem->mApis[i].mName);
         CString va      = ToCString(mModuleInfoItem->mApis[i].mVa, true);
         CString forward = ToCString(mModuleInfoItem->mApis[i].mForwardto);
-        m_listModuleApis.SetItem(idx, 1, LVIF_TEXT, name, 0, 0, 0, 0);
-        m_listModuleApis.SetItem(idx, 2, LVIF_TEXT, va, 0, 0, 0, 0);
-        m_listModuleApis.SetItem(idx, 3, LVIF_TEXT, mModuleInfoItem->mApis[i].mIsForward ? forward : _T(""), 0, 0, 0, 0);
-        m_listModuleApis.SetItem(idx, 4, LVIF_TEXT, mModuleInfoItem->mApis[i].mIsDataExport ? _T("1") : _T("0"), 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Name   , LVIF_TEXT, name, 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_VA     , LVIF_TEXT, va, 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Forward, LVIF_TEXT, mModuleInfoItem->mApis[i].mIsForward ? forward : _T(""), 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Data   , LVIF_TEXT, mModuleInfoItem->mApis[i].mIsDataExport ? _T("1") : _T("0"), 0, 0, 0, 0);
 
         ListView_SetCheckState(m_listModuleApis, idx, 2);
     }
@@ -180,3 +192,88 @@ void CAddModuleFilterDlg::OnBnClickedCheckAll()
     UpdateData(FALSE);
 }
 
+
+
+void CAddModuleFilterDlg::OnNMRClickList1(NMHDR *pNMHDR, LRESULT *pResult)
+{
+    LPNMITEMACTIVATE pNMItemActivate = reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
+
+    CPoint point, clPos;
+    GetCursorPos(&point);
+    clPos = point;
+    m_listModuleApis.ScreenToClient(&clPos);
+    int index = m_listModuleApis.HitTest(clPos);
+    if (index < 0)
+        return;
+
+    m_listModuleApis.SetItemState(index, LVIS_SELECTED, LVIS_SELECTED);
+    m_listModuleApis.SetSelectionMark(index);
+    CMenu menu;
+    menu.LoadMenu(IDR_FILTER_DLG_POP_MENU);
+    CMenu *pPopup = menu.GetSubMenu(0);
+    pPopup->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, this);
+    *pResult = 0;
+}
+
+void CAddModuleFilterDlg::OnSetbreakpointAlways()
+{
+    POSITION pos = m_listModuleApis.GetFirstSelectedItemPosition();
+    int index = m_listModuleApis.GetNextSelectedItem(pos);
+    if (index < 0)
+        return;
+
+    if (index >= mModuleInfoItem->mApis.size())
+        return;
+
+    TCHAR buffer[512];
+    m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
+    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
+    mModuleInfoItem->mApis[index].BreakAlways();
+
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+}
+
+void CAddModuleFilterDlg::OnSetbreakpointMeethittime()
+{
+    mModuleInfoItem->mApis[0].mIsHook;
+    CSetBreakPointTimeDialog dlg(this);
+    if (IDOK != dlg.DoModal())
+        return;
+
+    int times = _wtoi(dlg.m_Times);
+    if (times <= 0)
+        return;
+
+    POSITION pos = m_listModuleApis.GetFirstSelectedItemPosition();
+    int index = m_listModuleApis.GetNextSelectedItem(pos);
+    if (index < 0)
+        return;
+
+    if (index >= mModuleInfoItem->mApis.size())
+        return;
+
+    TCHAR buffer[512];
+    m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
+    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
+    mModuleInfoItem->mApis[index].BreakOnTime(times);
+
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+}
+
+void CAddModuleFilterDlg::OnSetbreakpointDelete()
+{
+    POSITION pos = m_listModuleApis.GetFirstSelectedItemPosition();
+    int index = m_listModuleApis.GetNextSelectedItem(pos);
+    if (index < 0)
+        return;
+
+    if (index >= mModuleInfoItem->mApis.size())
+        return;
+
+    TCHAR buffer[512];
+    m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
+    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
+    mModuleInfoItem->mApis[index].RemoveBp();
+
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+}

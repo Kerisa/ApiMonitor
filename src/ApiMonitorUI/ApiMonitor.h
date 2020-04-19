@@ -11,12 +11,18 @@ struct ModuleInfoItem
     intptr_t    mBase{ 0 };
     struct ApiEntry
     {
-        std::string mName;
-        std::string mForwardto;
-        intptr_t    mVa{ 0 };
-        bool        mIsForward{ false };
-        bool        mIsDataExport{ false };
-        bool        mIsHook{ false };
+        std::string                         mName;
+        std::string                         mForwardto;
+        intptr_t                            mVa{ 0 };
+        bool                                mIsForward{ false };
+        bool                                mIsDataExport{ false };
+        bool                                mIsHook{ false };
+        PipeDefine::msg::SetBreakCondition  mBp;
+
+        void        BreakAlways();
+        void        BreakOnTime(int time);
+        void        RemoveBp();
+        std::string GetBpDescription() const;
     };
     std::vector<ApiEntry> mApis;
 };

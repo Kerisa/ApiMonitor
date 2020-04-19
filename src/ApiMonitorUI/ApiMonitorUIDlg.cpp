@@ -302,9 +302,10 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 ae.mIsForward = m.apis[i].forward_api;
                 ae.mIsDataExport = m.apis[i].data_export;
                 ae.mForwardto = m.apis[i].forwardto;
+                ae.mBp.func_addr = ae.mVa;
                 me.mApis.push_back(ae);
-                if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
-                    pc->outputdbgstr = m.apis[i].va;
+                //if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
+                //    pc->outputdbgstr = m.apis[i].va;
             }
             pc->mModuleApis.push_back(me);
             dlg->UpdateModuleList(&me);
@@ -318,10 +319,13 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                     PipeDefine::msg::ApiFilter::Api filter_api;
                     filter_api.func_addr = me.mApis[i].mVa;
                     filter_api.filter = me.mApis[i].mIsHook;        // 由 UI 更新
-                    if (filter_api.func_addr == pc->outputdbgstr)
-                    {
-                        filter_api.bc_next_time = true;
-                    }
+                    
+                    filter_api.bc_next_time = me.mApis[i].mBp.break_next_time;
+                    filter_api.bc_call_from = me.mApis[i].mBp.break_call_from;
+                    filter_api.bc_invoke_time = me.mApis[i].mBp.break_invoke_time;
+                    filter_api.call_from = me.mApis[i].mBp.call_from;
+                    filter_api.func_addr = me.mApis[i].mBp.func_addr;
+                    filter_api.invoke_time = me.mApis[i].mBp.invoke_time;
 
                     filter.apis.push_back(filter_api);
                 }
@@ -332,22 +336,6 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 msg2->ContentSize = str.size();
                 memcpy_s(msg2->Content, maxWriteBuffer, str.data(), str.size());
                 *writeDataSize += msg2->HeaderLength + msg2->ContentSize;
-
-                //if (pc->outputdbgstr != 0)
-                //{
-                //    PipeDefine::msg::SetBreakCondition m1;
-                //    m1.func_addr = pc->outputdbgstr;
-                //    m1.break_next_time = true;
-                //    str = m1.Serial();
-                //    PipeDefine::Message* msg3 = (PipeDefine::Message*)(writeData + msg2->HeaderLength + msg2->ContentSize);
-                //    msg3->type = PipeDefine::Pipe_S_Req_SetBreakCondition;
-                //    msg3->tid = -1;
-                //    msg3->ContentSize = str.size();
-                //    memcpy_s(msg3->Content, maxWriteBuffer, str.data(), str.size());
-                //    *writeDataSize += msg3->HeaderLength + msg3->ContentSize;
-                //    printf("condition sent!\n");
-                //    pc->outputdbgstr = 0;
-                //}
             }
             break;
         }
@@ -451,6 +439,7 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
         }
         HTREEITEM hApi = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(name), NULL, NULL, hMod);
         m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_VA, ToCString(mii->mApis[i].mVa, true));
+        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_BreakPoint, ToCString(mii->mApis[i].GetBpDescription()));
         m_treeModuleList.GetTreeCtrl().SetCheck(hApi, mii->mApis[i].mIsHook);
         hookCount += (int)mii->mApis[i].mIsHook;
     }
@@ -614,8 +603,6 @@ void CApiMonitorUIDlg::OnOptionConfig()
 
 void CApiMonitorUIDlg::OnNMRClickTreeModules(NMHDR *pNMHDR, LRESULT *pResult)
 {
-    // TODO: Add your message handler code here and/or call default
-
     CPoint point, clPos;
     GetCursorPos(&point);
     clPos = point;
@@ -685,7 +672,7 @@ void CApiMonitorUIDlg::OnSetbreakpointAlways()
     auto it = m_BreakPoints.find(sbc);
     m_BreakPoints.insert(it, sbc);
 
-    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Next Time"));
+    m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Always"));
 }
 
 void CApiMonitorUIDlg::OnUpdateSetBreakPointMeetHitTime(CCmdUI *pCmdUI)

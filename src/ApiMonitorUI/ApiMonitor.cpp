@@ -1,6 +1,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <sstream>
 #include <thread>
 #include <vector>
 #include <windows.h>
@@ -226,4 +227,37 @@ int Monitor::LoadFile(const std::wstring& filePath)
     return 0;
 }
 
+void ModuleInfoItem::ApiEntry::BreakAlways()
+{
+    RemoveBp();
+    mBp.break_next_time = true;
+}
 
+void ModuleInfoItem::ApiEntry::BreakOnTime(int time)
+{
+    RemoveBp();
+    mBp.break_invoke_time = true;
+    mBp.invoke_time = time;
+}
+
+void ModuleInfoItem::ApiEntry::RemoveBp()
+{
+    mBp.break_call_from = false;
+    mBp.break_invoke_time = false;
+    mBp.break_next_time = false;
+}
+
+std::string ModuleInfoItem::ApiEntry::GetBpDescription() const
+{
+    assert(mBp.break_next_time + mBp.break_call_from + mBp.break_invoke_time <= 1);
+    if (mBp.break_next_time)
+        return "Always";
+    else if (mBp.break_invoke_time)
+    {
+        std::stringstream ss;
+        ss << mBp.invoke_time;
+        return std::string("times == ") + ss.str();
+    }
+    else
+        return "";
+}

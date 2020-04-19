@@ -41,4 +41,8 @@ public:
     virtual void OnOK();
     virtual void OnCancel();
     afx_msg void OnBnClickedCheckAll();
+    afx_msg void OnNMRClickList1(NMHDR *pNMHDR, LRESULT *pResult);
+    afx_msg void OnSetbreakpointAlways();
+    afx_msg void OnSetbreakpointMeethittime();
+    afx_msg void OnSetbreakpointDelete();
 };

@@ -12,6 +12,7 @@
 #define IDD_CONFIG                      133
 #define IDR_TREE_POP_MENU               135
 #define IDD_SET_BP_TIME                 136
+#define IDR_FILTER_DLG_POP_MENU         136
 #define IDC_TREE_MODULES                1009
 #define IDC_LIST_API_LOGS               1010
 #define IDE_FILE_PATH                   1011
@@ -34,13 +35,16 @@
 #define ID_SETBREAKPOINT_ALWAYS         32775
 #define ID_SETBREAKPOINT_MEETHITTIME    32776
 #define ID_SETBREAKPOINT_DELETE         32777
+#define IDM_FILTERDLG_SETBREAKPOINT_DELETE 32778
+#define IDM_FILTERDLG_SETBREAKPOINT_MEETHITTIME 32779
+#define IDM_FILTERDLG_SETBREAKPOINT_ALWAYS 32780
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        138
-#define _APS_NEXT_COMMAND_VALUE         32778
+#define _APS_NEXT_COMMAND_VALUE         32781
 #define _APS_NEXT_CONTROL_VALUE         1018
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
