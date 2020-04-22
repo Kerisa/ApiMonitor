@@ -155,76 +155,82 @@ void Monitor::SetPipeHandler(PipeController * controller)
     mControllerRef = controller;
 }
 
+bool Monitor::SuspendProcess()
+{
+    auto sus = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtSuspendProcess");
+    if (!sus)
+        return false;
+
+    LONG ret = sus(mProcessInfo.hProcess);
+    return ret >= 0;
+}
+
+bool Monitor::ResumeProcess()
+{
+    auto res = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtResumeProcess");
+    if (!res)
+        return false;
+
+    LONG ret = res(mProcessInfo.hProcess);
+    return ret >= 0;
+}
+
 int Monitor::LoadFile(const std::wstring& filePath)
 {
     WCHAR cmd[MAX_PATH] = { 0 };
     wcscpy_s(cmd, filePath.c_str());
     STARTUPINFO si = { 0 };
     si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = { 0 };
-    BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
+    memset(&mProcessInfo, 0, sizeof(mProcessInfo));
+    BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &mProcessInfo);
 
-    LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    LPVOID paramBase = VirtualAllocEx(mProcessInfo.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
     SIZE_T R = 0;
     PARAM param;
     memset(&param, 0, sizeof(PARAM));
     param.ntdllBase = (LPVOID)GetModuleHandleA("ntdll.dll");
     param.f_LdrLoadDll = (FN_LdrLoadDll)((ULONG_PTR)GetProcAddress((HMODULE)param.ntdllBase, "LdrLoadDll") + 2);
-    param.dwProcessId = pi.dwProcessId;
-    param.dwThreadId = pi.dwThreadId;
+    param.dwProcessId = mProcessInfo.dwProcessId;
+    param.dwThreadId = mProcessInfo.dwThreadId;
     param.ctx.ContextFlags = CONTEXT_ALL;
-    GetThreadContext(pi.hThread, &param.ctx);
+    GetThreadContext(mProcessInfo.hThread, &param.ctx);
 
     char bytesOfNtMapViewOfSectionPad[32] = { 0 };
-    ReadProcessMemory(pi.hProcess, (LPVOID)GetProcAddress((HMODULE)param.ntdllBase, "NtMapViewOfSection"), bytesOfNtMapViewOfSectionPad, sizeof(bytesOfNtMapViewOfSectionPad), &R);
+    ReadProcessMemory(mProcessInfo.hProcess, (LPVOID)GetProcAddress((HMODULE)param.ntdllBase, "NtMapViewOfSection"), bytesOfNtMapViewOfSectionPad, sizeof(bytesOfNtMapViewOfSectionPad), &R);
     assert(bytesOfNtMapViewOfSectionPad[0] == '\xb8');  // mov eax,28h
     param.NtMapViewOfSectionServerId = *(PDWORD)&bytesOfNtMapViewOfSectionPad[1];
     assert(bytesOfNtMapViewOfSectionPad[5] == '\xba');  // mov edx,offset XXX
     param.f_Wow64SystemServiceCall = (LPVOID)*(PDWORD)&bytesOfNtMapViewOfSectionPad[6];
     assert(*(PWORD)&bytesOfNtMapViewOfSectionPad[10] == 0xd2ff);  // call edx
     assert(param.f_Wow64SystemServiceCall != 0);
-    PVOID oep = Detail::BuildRemoteData(pi.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+    PVOID oep = Detail::BuildRemoteData(mProcessInfo.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
-    WriteProcessMemory(pi.hProcess, paramBase, &param, sizeof(param), &R);
+    WriteProcessMemory(mProcessInfo.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;
     copy.Eax = (DWORD)oep;
-    SetThreadContext(pi.hThread, &copy);
+    SetThreadContext(mProcessInfo.hThread, &copy);
 
     NamedPipeServer ps;
     std::thread th = std::thread([&]() {
         char piepeName[256] = { 0 };
-        sprintf_s(piepeName, sizeof(piepeName), PipeDefine::PIPE_NAME_TEMPLATE, pi.dwProcessId);
+        sprintf_s(piepeName, sizeof(piepeName), PipeDefine::PIPE_NAME_TEMPLATE, mProcessInfo.dwProcessId);
         ps.StartServer(piepeName, mControllerRef->mMsgHandler, mControllerRef->mUserData);
     });
 
     while (!ps.IsRunning())
         Sleep(1);
-    ResumeThread(pi.hThread);
-
-    Sleep(3000);
-    //MessageBoxA(0, "will suspend.", 0, 0);
-    //auto sus = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtSuspendProcess");
-    //sus(pi.hProcess);
-    //MessageBoxA(0, "will resume.", 0, 0);
-    //auto res = (FN_NtSuspendProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtResumeProcess");
-    //res(pi.hProcess);
-    //MessageBoxA(0, "break when \"OutputDebugStringA\" called.", 0, 0);
-
-    //PipeDefine::msg::SetBreakCondition* cond = mControllerRef->Lock();
-    //cond->func_addr = mControllerRef->outputdbgstr;
-    //cond->break_next_time = true;
-    //mControllerRef->UnLock();
-    //mControllerRef->mConditionReady = true;
+    ResumeThread(mProcessInfo.hThread);
 
     DWORD status = STATUS_TIMEOUT;
     while (!mStopMonitor && status != WAIT_OBJECT_0)
     {
-        status = WaitForSingleObject(pi.hProcess, 1000);
+        status = WaitForSingleObject(mProcessInfo.hProcess, 1000);
     }
     
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+    CloseHandle(mProcessInfo.hProcess);
+    CloseHandle(mProcessInfo.hThread);
+    memset(&mProcessInfo, 0, sizeof(mProcessInfo));
     ps.StopServer();
     th.join();
     return 0;

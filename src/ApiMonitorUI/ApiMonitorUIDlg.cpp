@@ -144,6 +144,8 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_COMMAND(ID_SETBREAKPOINT_NEXTTIME, &CApiMonitorUIDlg::OnSetbreakpointNexttime)
     ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_NEXTTIME, &CApiMonitorUIDlg::OnUpdateSetbreakpointNexttime)
     ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnUpdateSetbreakpointDelete)
+    ON_BN_CLICKED(IDC_BUTTON_SUSPEND, &CApiMonitorUIDlg::OnBnClickedButtonSuspend)
+    ON_BN_CLICKED(IDC_BUTTON_RESUME, &CApiMonitorUIDlg::OnBnClickedButtonResume)
 END_MESSAGE_MAP()
 
 
@@ -802,4 +804,30 @@ void CApiMonitorUIDlg::OnUpdateSetbreakpointNexttime(CCmdUI *pCmdUI)
 void CApiMonitorUIDlg::OnUpdateSetbreakpointDelete(CCmdUI *pCmdUI)
 {
     pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnBnClickedButtonSuspend()
+{
+    if (!m_Monitor->SuspendProcess())
+    {
+        AfxMessageBox(_T("Suspend Failed."), MB_ICONWARNING);
+    }
+    else
+    {
+        GetDlgItem(IDC_BUTTON_SUSPEND)->ShowWindow(SW_HIDE);
+        GetDlgItem(IDC_BUTTON_RESUME)->ShowWindow(SW_NORMAL);
+    }
+}
+
+void CApiMonitorUIDlg::OnBnClickedButtonResume()
+{
+    if (!m_Monitor->ResumeProcess())
+    {
+        AfxMessageBox(_T("Resume Failed."), MB_ICONWARNING);
+    }
+    else
+    {
+        GetDlgItem(IDC_BUTTON_SUSPEND)->ShowWindow(SW_NORMAL);
+        GetDlgItem(IDC_BUTTON_RESUME)->ShowWindow(SW_HIDE);
+    }
 }

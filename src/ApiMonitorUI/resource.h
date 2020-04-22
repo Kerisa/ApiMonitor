@@ -23,7 +23,10 @@
 #define IDC_BUTTON_EXPORT               1013
 #define IDC_CHECK_ALL                   1014
 #define IDC_EDIT_NAME                   1015
+#define IDC_BUTTON_SUSPEND              1015
 #define IDC_EDIT_PATH                   1016
+#define IDC_BUTTON_SUSPEND2             1016
+#define IDC_BUTTON_RESUME               1016
 #define IDC_EDIT_BASE                   1017
 #define IDC_EDIT2                       1017
 #define IDC_EDIT1                       1017

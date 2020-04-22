@@ -77,11 +77,13 @@ public:
     int LoadFile(const std::wstring& filePath);
 
     void SetPipeHandler(PipeController* controller);
-
+    bool SuspendProcess();
+    bool ResumeProcess();
 
     bool mContinueOEP{ false };
     bool mStopMonitor{ false };
     PipeController* mControllerRef{ nullptr };
 
 private:
+    PROCESS_INFORMATION mProcessInfo;
 };

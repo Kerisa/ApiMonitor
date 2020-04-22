@@ -82,4 +82,6 @@ public:
     afx_msg void OnSetbreakpointNexttime();
     afx_msg void OnUpdateSetbreakpointNexttime(CCmdUI *pCmdUI);
     afx_msg void OnUpdateSetbreakpointDelete(CCmdUI *pCmdUI);
+    afx_msg void OnBnClickedButtonSuspend();
+    afx_msg void OnBnClickedButtonResume();
 };
