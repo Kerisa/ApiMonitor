@@ -33,6 +33,7 @@ struct ApiInfoItem
         mBelongModule = ref;
     }
 
+    bool        IsBpSet() const;
     void        BreakAlways();
     void        BreakNextTime();
     void        BreakOnTime(int time);

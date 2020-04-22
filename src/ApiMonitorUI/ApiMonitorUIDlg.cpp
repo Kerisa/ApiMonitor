@@ -12,6 +12,7 @@
 #include "ApiMonitor.h"
 #include "CAddModuleFilterDlg.h"
 #include "CSetBreakPointTimeDialog.h"
+#include "CHitBreakpointDlg.h"
 #include "uihelper.h"
 
 #ifdef _DEBUG
@@ -19,7 +20,8 @@
 #endif
 
 #define ID_REFRESH_API_CALL_LOG_TIMER 1
-#define WM_TREE_ADD_MODULE WM_USER+100  
+#define WM_TREE_ADD_MODULE WM_USER+100
+#define WM_BREAK_POINT_HIT WM_USER+101
 
 const int TreeCtrlColumnIndex_Module     = 0;
 const int TreeCtrlColumnIndex_VA         = 1;
@@ -108,7 +110,16 @@ void CApiMonitorUIDlg::AppendApiCallLog(void * pv)
 void CApiMonitorUIDlg::CheckBreakCondition(void * pv)
 {
     ApiLogItem* al = reinterpret_cast<ApiLogItem*>(pv);
-    //m_Modules.
+    SetBreakConditionUI* bc = nullptr;
+    for (auto it = m_BreakPointsRef.begin(); !bc && it != m_BreakPointsRef.end(); ++it)
+    {
+        if ((*it)->mBelongApi->mName == al->mApiName &&
+            (*it)->mBelongApi->mBelongModule->mName == al->mModuleName)
+        {
+            bc = *it;
+        }
+    }
+    SendMessage(WM_BREAK_POINT_HIT, (WPARAM)bc, 0);
 }
 
 BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
@@ -117,6 +128,7 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
 	ON_WM_QUERYDRAGICON()
     ON_BN_CLICKED(IDC_BUTTON1, &CApiMonitorUIDlg::OnBnClickedButton1)
     ON_MESSAGE(WM_TREE_ADD_MODULE, &CApiMonitorUIDlg::OnTreeListAddModule)
+    ON_MESSAGE(WM_BREAK_POINT_HIT, &CApiMonitorUIDlg::OnBreakPointHit)
     ON_WM_TIMER()
     ON_WM_SIZE()
     ON_BN_CLICKED(IDC_BUTTON_EXPORT, &CApiMonitorUIDlg::OnBnClickedButtonExport)
@@ -393,10 +405,21 @@ void CApiMonitorUIDlg::OnBnClickedButton1()
     m_editFilePath.GetWindowText(path);
     if (m_RunningMonitorThread.joinable())
     {
-        AfxMessageBox(_T("Already running"));
-        return;
+        HANDLE hT = m_RunningMonitorThread.native_handle();
+        switch (WaitForSingleObject(hT, 500))
+        {
+        case WAIT_TIMEOUT:
+            AfxMessageBox(_T("Already running"));
+            return;
+        case WAIT_OBJECT_0:
+            m_RunningMonitorThread.join();
+            break;
+        default:
+            AfxMessageBox(_T("Unexcept state"));
+            break;
+        }
     }
-
+    ResetState();
     m_RunningMonitorThread = std::thread([this, path]() {
         return m_Monitor->LoadFile(path.GetString());
     });
@@ -422,6 +445,11 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
         dlg.DoModal();
     }
     m_Modules.push_back(mii);
+    for (size_t i = 0; i < mii->mApis.size(); ++i)
+    {
+        if (mii->mApis[i].IsBpSet())
+            m_BreakPointsRef.insert(&mii->mApis[i].mBp);
+    }
 
     HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
     if (hRoot == NULL)
@@ -451,6 +479,14 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     m_treeModuleList.GetTreeCtrl().SetCheck(hMod, mii->mApis.size() == hookCount);
     m_treeModuleList.SetItemText(hMod, TreeCtrlColumnIndex_HookCount, ToCString(hookCount));
     m_treeModuleList.GetTreeCtrl().EnsureVisible(hMod);
+    return 0;
+}
+
+LRESULT CApiMonitorUIDlg::OnBreakPointHit(WPARAM wParam, LPARAM lParam)
+{
+    SetBreakConditionUI* bc = (SetBreakConditionUI*)wParam;
+    CHitBreakpointDlg dlg(bc, this);
+    dlg.DoModal();
     return 0;
 }
 
@@ -649,6 +685,18 @@ SetBreakConditionUI * CApiMonitorUIDlg::FindBreakConditionInfo(intptr_t funcVA)
         }
     }
     return nullptr;
+}
+
+void CApiMonitorUIDlg::ResetState()
+{
+    m_ApiLogs.clear();
+    for (auto p : m_Modules)
+        delete p;
+    m_Modules.clear();
+    m_BreakPointsRef.clear();
+    m_treeModuleList.GetTreeCtrl().DeleteAllItems();
+    m_listApiCalls.DeleteAllItems();
+    assert(!m_RunningMonitorThread.joinable());
 }
 
 void CApiMonitorUIDlg::OnSetbreakpointMeethittime()

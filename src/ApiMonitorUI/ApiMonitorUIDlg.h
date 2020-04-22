@@ -30,19 +30,22 @@ public:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV 支持
 
 public:
-    void UpdateModuleList(void* me);        // PipeController::ModuleEntry*
-    void AppendApiCallLog(void* ai);        // PipeController::ApiLog*
-    void CheckBreakCondition(void* ai);     // PipeController::ApiLog*
+    void                    UpdateModuleList(void* me);        // PipeController::ModuleEntry*
+    void                    AppendApiCallLog(void* ai);        // PipeController::ApiLog*
+    void                    CheckBreakCondition(void* ai);     // PipeController::ApiLog*
 
-    bool IsModuleFunctionSelected();
-    SetBreakConditionUI* FindBreakConditionInfo(intptr_t funcVA);
+    bool                    IsModuleFunctionSelected();
+    SetBreakConditionUI*    FindBreakConditionInfo(intptr_t funcVA);
+    void                    ResetState();
 
     Monitor*                         m_Monitor;
     PipeController*                  m_Controller;
-    std::vector<ApiLogItem>          m_ApiLogs;
     std::mutex                       m_LogLock;
+
+    std::vector<ApiLogItem>          m_ApiLogs;
     std::vector<ModuleInfoItem*>     m_Modules;
     std::set<SetBreakConditionUI*>   m_BreakPointsRef;     // SetBreakConditionUI 指向 ModuleInfoItem
+    std::thread                      m_RunningMonitorThread;
 
 // 实现
 protected:
@@ -50,8 +53,6 @@ protected:
     CEdit                       m_editFilePath;
     CColumnTreeCtrl             m_treeModuleList;
     CListCtrl                   m_listApiCalls;
-
-    std::thread                 m_RunningMonitorThread;
 
 	// 生成的消息映射函数
 	virtual BOOL OnInitDialog();
@@ -65,6 +66,7 @@ public:
 	afx_msg HCURSOR OnQueryDragIcon();
     afx_msg void OnBnClickedButton1();
     afx_msg LRESULT OnTreeListAddModule(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnBreakPointHit(WPARAM wParam, LPARAM lParam);
     afx_msg void OnTimer(UINT nIDEvent);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg void OnBnClickedButtonExport();

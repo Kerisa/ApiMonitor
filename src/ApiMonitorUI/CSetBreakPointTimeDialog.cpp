@@ -27,6 +27,12 @@ void CSetBreakPointTimeDialog::DoDataExchange(CDataExchange* pDX)
     DDX_CBString(pDX, IDC_EDIT1, m_Times);
 }
 
+BOOL CSetBreakPointTimeDialog::OnInitDialog()
+{
+    GetDlgItem(IDC_EDIT1)->SetFocus();
+    return FALSE;
+}
+
 
 BEGIN_MESSAGE_MAP(CSetBreakPointTimeDialog, CDialogEx)
 END_MESSAGE_MAP()

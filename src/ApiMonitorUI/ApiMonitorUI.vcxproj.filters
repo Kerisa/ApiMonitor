@@ -87,6 +87,9 @@
     <ClInclude Include="CSetBreakPointTimeDialog.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="CHitBreakpointDlg.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ApiMonitorUI.cpp">
@@ -129,6 +132,9 @@
       <Filter>json</Filter>
     </ClCompile>
     <ClCompile Include="CSetBreakPointTimeDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CHitBreakpointDlg.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

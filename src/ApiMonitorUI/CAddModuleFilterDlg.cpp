@@ -45,7 +45,7 @@ BEGIN_MESSAGE_MAP(CAddModuleFilterDlg, CDialogEx)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_ALWAYS, &CAddModuleFilterDlg::OnSetbreakpointAlways)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_MEETHITTIME, &CAddModuleFilterDlg::OnSetbreakpointMeethittime)
     ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_DELETE, &CAddModuleFilterDlg::OnSetbreakpointDelete)
-    ON_COMMAND(ID_SETBREAKPOINT_NEXTTIME, &CAddModuleFilterDlg::OnSetbreakpointNexttime)
+    ON_COMMAND(IDM_FILTERDLG_SETBREAKPOINT_NEXTTIME, &CAddModuleFilterDlg::OnSetbreakpointNexttime)
 END_MESSAGE_MAP()
 
 
@@ -61,26 +61,6 @@ const int ListModuleApisColumn_BreakPoint   = 5;
 BOOL CAddModuleFilterDlg::OnInitDialog()
 {
     CDialogEx::OnInitDialog();
-
-    // 将“关于...”菜单项添加到系统菜单中。
-
-    // IDM_ABOUTBOX 必须在系统命令范围内。
-    ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
-    ASSERT(IDM_ABOUTBOX < 0xF000);
-
-    CMenu* pSysMenu = GetSystemMenu(FALSE);
-    if (pSysMenu != nullptr)
-    {
-        BOOL bNameValid;
-        CString strAboutMenu;
-        bNameValid = strAboutMenu.LoadString(IDS_ABOUTBOX);
-        ASSERT(bNameValid);
-        if (!strAboutMenu.IsEmpty())
-        {
-            pSysMenu->AppendMenu(MF_SEPARATOR);
-            pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
-        }
-    }
 
     // 设置此对话框的图标。  当应用程序主窗口不是对话框时，框架将自动
     //  执行此操作

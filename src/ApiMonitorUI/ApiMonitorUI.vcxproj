@@ -220,6 +220,7 @@
     <ClInclude Include="ApiMonitorUI.h" />
     <ClInclude Include="ApiMonitorUIDlg.h" />
     <ClInclude Include="CAddModuleFilterDlg.h" />
+    <ClInclude Include="CHitBreakpointDlg.h" />
     <ClInclude Include="ColumnTreeCtrl.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="CSetBreakPointTimeDialog.h" />
@@ -273,6 +274,7 @@
     <ClCompile Include="ApiMonitorUI.cpp" />
     <ClCompile Include="ApiMonitorUIDlg.cpp" />
     <ClCompile Include="CAddModuleFilterDlg.cpp" />
+    <ClCompile Include="CHitBreakpointDlg.cpp" />
     <ClCompile Include="ColumnTreeCtrl.cpp" />
     <ClCompile Include="config.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>

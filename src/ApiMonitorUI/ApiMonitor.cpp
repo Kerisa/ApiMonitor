@@ -230,6 +230,11 @@ int Monitor::LoadFile(const std::wstring& filePath)
     return 0;
 }
 
+bool ApiInfoItem::IsBpSet() const
+{
+    return mBp.break_always || mBp.break_call_from || mBp.break_invoke_time || mBp.break_next_time;
+}
+
 void ApiInfoItem::BreakAlways()
 {
     RemoveBp();
@@ -254,6 +259,7 @@ void ApiInfoItem::RemoveBp()
     mBp.break_call_from = false;
     mBp.break_invoke_time = false;
     mBp.break_next_time = false;
+    mBp.break_always = false;
 }
 
 std::string ApiInfoItem::GetBpDescription() const
