@@ -14,14 +14,6 @@
 class Monitor;
 class PipeController;
 
-struct SetBreakConditionUI : public PipeDefine::msg::SetBreakCondition
-{
-    bool operator<(const SetBreakConditionUI& rhs) const
-    {
-        return this->func_addr < rhs.func_addr;
-    }
-};
-
 // CApiMonitorUIDlg 对话框
 class CApiMonitorUIDlg : public CDialogEx
 {
@@ -43,13 +35,14 @@ public:
     void CheckBreakCondition(void* ai);     // PipeController::ApiLog*
 
     bool IsModuleFunctionSelected();
+    SetBreakConditionUI* FindBreakConditionInfo(intptr_t funcVA);
 
     Monitor*                         m_Monitor;
     PipeController*                  m_Controller;
     std::vector<ApiLogItem>          m_ApiLogs;
     std::mutex                       m_LogLock;
-    std::vector<ModuleInfoItem>      m_Modules;
-    std::set<SetBreakConditionUI>    m_BreakPoints;     // SetBreakConditionUI 和 ApiLogItem 应整合到 ModuleInfoItem 里
+    std::vector<ModuleInfoItem*>     m_Modules;
+    std::set<SetBreakConditionUI*>   m_BreakPointsRef;     // SetBreakConditionUI 指向 ModuleInfoItem
 
 // 实现
 protected:
@@ -85,4 +78,6 @@ public:
     afx_msg void OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI);
     afx_msg void OnSetBreakPointDelete();
     afx_msg void OnSetbreakpointNexttime();
+    afx_msg void OnUpdateSetbreakpointNexttime(CCmdUI *pCmdUI);
+    afx_msg void OnUpdateSetbreakpointDelete(CCmdUI *pCmdUI);
 };

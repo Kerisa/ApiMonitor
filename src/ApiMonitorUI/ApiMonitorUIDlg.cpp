@@ -3,6 +3,7 @@
 //
 
 #include "stdafx.h"
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include "ApiMonitorUI.h"
@@ -107,6 +108,7 @@ void CApiMonitorUIDlg::AppendApiCallLog(void * pv)
 void CApiMonitorUIDlg::CheckBreakCondition(void * pv)
 {
     ApiLogItem* al = reinterpret_cast<ApiLogItem*>(pv);
+    //m_Modules.
 }
 
 BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
@@ -128,6 +130,8 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_ALWAYS, &CApiMonitorUIDlg::OnUpdateSetbreakpointAlways)
     ON_COMMAND(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnSetBreakPointDelete)
     ON_COMMAND(ID_SETBREAKPOINT_NEXTTIME, &CApiMonitorUIDlg::OnSetbreakpointNexttime)
+    ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_NEXTTIME, &CApiMonitorUIDlg::OnUpdateSetbreakpointNexttime)
+    ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnUpdateSetbreakpointDelete)
 END_MESSAGE_MAP()
 
 
@@ -291,43 +295,42 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             PipeDefine::msg::ModuleApis m;
             std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
             m.Unserial(str);
-            ModuleInfoItem me;
-            me.mName = m.module_name;
-            me.mPath = m.module_path;
-            me.mBase = m.module_base;
+            ModuleInfoItem* me = new ModuleInfoItem();
+            me->mName = m.module_name;
+            me->mPath = m.module_path;
+            me->mBase = m.module_base;
             for (size_t i = 0; i < m.apis.size(); ++i)
             {
-                ModuleInfoItem::ApiEntry ae;
+                me->mApis.emplace_back(me);
+                ApiInfoItem& ae = me->mApis.back();
                 ae.mName = m.apis[i].name;
                 ae.mVa = m.apis[i].va;
                 ae.mIsForward = m.apis[i].forward_api;
                 ae.mIsDataExport = m.apis[i].data_export;
                 ae.mForwardto = m.apis[i].forwardto;
                 ae.mBp.func_addr = ae.mVa;
-                me.mApis.push_back(ae);
                 //if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
                 //    pc->outputdbgstr = m.apis[i].va;
             }
-            pc->mModuleApis.push_back(me);
-            dlg->UpdateModuleList(&me);
+            dlg->UpdateModuleList(me);
 
             if (!m.no_reply)
             {
                 PipeDefine::msg::ApiFilter filter;
                 filter.module_name = m.module_name;
-                for (size_t i = 0; i < me.mApis.size(); ++i)
+                for (size_t i = 0; i < me->mApis.size(); ++i)
                 {
                     PipeDefine::msg::ApiFilter::Api filter_api;
-                    filter_api.func_addr        = me.mApis[i].mVa;
-                    filter_api.filter           = me.mApis[i].mIsHook;        // 由 UI 更新
-                    
-                    filter_api.bc_always        = me.mApis[i].mBp.break_always;
-                    filter_api.bc_next_time     = me.mApis[i].mBp.break_next_time;
-                    filter_api.bc_call_from     = me.mApis[i].mBp.break_call_from;
-                    filter_api.bc_invoke_time   = me.mApis[i].mBp.break_invoke_time;
-                    filter_api.call_from        = me.mApis[i].mBp.call_from;
-                    filter_api.func_addr        = me.mApis[i].mBp.func_addr;
-                    filter_api.invoke_time      = me.mApis[i].mBp.invoke_time;
+                    filter_api.func_addr        = me->mApis[i].mVa;
+                    filter_api.filter           = me->mApis[i].mIsHook;        // 由 UI 更新
+
+                    filter_api.bc_always        = me->mApis[i].mBp.break_always;
+                    filter_api.bc_next_time     = me->mApis[i].mBp.break_next_time;
+                    filter_api.bc_call_from     = me->mApis[i].mBp.break_call_from;
+                    filter_api.bc_invoke_time   = me->mApis[i].mBp.break_invoke_time;
+                    filter_api.call_from        = me->mApis[i].mBp.call_from;
+                    filter_api.func_addr        = me->mApis[i].mBp.func_addr;
+                    filter_api.invoke_time      = me->mApis[i].mBp.invoke_time;
 
                     filter.apis.push_back(filter_api);
                 }
@@ -418,7 +421,7 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
         CAddModuleFilterDlg dlg(mii, this);
         dlg.DoModal();
     }
-    m_Modules.push_back(*mii);
+    m_Modules.push_back(mii);
 
     HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
     if (hRoot == NULL)
@@ -540,7 +543,10 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
         return;
 
     DWORD R;
-    std::vector<ModuleInfoItem> tmpModule = m_Modules;
+    std::vector<ModuleInfoItem> tmpModule;
+    std::transform(m_Modules.begin(), m_Modules.end(), std::back_inserter(tmpModule), [](ModuleInfoItem* mii) {
+        return *mii;
+    });
     for (size_t i = 0; i < tmpModule.size(); ++i)
     {
         sstream_t ss;
@@ -632,6 +638,19 @@ bool CApiMonitorUIDlg::IsModuleFunctionSelected()
     return true;
 }
 
+SetBreakConditionUI * CApiMonitorUIDlg::FindBreakConditionInfo(intptr_t funcVA)
+{
+    for (size_t i = 0; i < m_Modules.size(); ++i)
+    {
+        for (size_t k = 0; k < m_Modules[i]->mApis.size(); ++k)
+        {
+            if (funcVA == m_Modules[i]->mApis[k].mVa)
+                return &m_Modules[i]->mApis[k].mBp;
+        }
+    }
+    return nullptr;
+}
+
 void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
 {
     if (!IsModuleFunctionSelected())
@@ -649,12 +668,13 @@ void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
     if (!hItem)
         return;
 
-    SetBreakConditionUI sbc;
-    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
-    sbc.invoke_time = times;
-    sbc.break_invoke_time = true;
-    auto it = m_BreakPoints.find(sbc);
-    m_BreakPoints.insert(it, sbc);
+    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    if (!bc)
+        return;
+
+    bc->invoke_time = times;
+    bc->break_invoke_time = true;
+    m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, CString(_T("times == ")) + dlg.m_Times);
 }
@@ -668,23 +688,14 @@ void CApiMonitorUIDlg::OnSetbreakpointAlways()
     if (!hItem)
         return;
 
-    SetBreakConditionUI sbc;
-    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
-    sbc.break_always = true;
-    auto it = m_BreakPoints.find(sbc);
-    m_BreakPoints.insert(it, sbc);
+    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    if (!bc)
+        return;
+
+    bc->break_always = true;
+    m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Always"));
-}
-
-void CApiMonitorUIDlg::OnUpdateSetBreakPointMeetHitTime(CCmdUI *pCmdUI)
-{
-    pCmdUI->Enable(IsModuleFunctionSelected());
-}
-
-void CApiMonitorUIDlg::OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI)
-{
-    pCmdUI->Enable(IsModuleFunctionSelected());
 }
 
 void CApiMonitorUIDlg::OnSetBreakPointDelete()
@@ -696,9 +707,11 @@ void CApiMonitorUIDlg::OnSetBreakPointDelete()
     if (!hItem)
         return;
 
-    SetBreakConditionUI sbc;
-    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
-    m_BreakPoints.erase(sbc);
+    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    if (!bc)
+        return;
+
+    m_BreakPointsRef.erase(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T(""));
 }
@@ -713,11 +726,32 @@ void CApiMonitorUIDlg::OnSetbreakpointNexttime()
     if (!hItem)
         return;
 
-    SetBreakConditionUI sbc;
-    sbc.func_addr = ToInt(m_treeModuleList.GetItemText(hItem, 1), true);    // VA
-    sbc.break_next_time = true;
-    auto it = m_BreakPoints.find(sbc);
-    m_BreakPoints.insert(it, sbc);
+    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    if (!bc)
+        return;
+
+    bc->break_next_time = true;
+    m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Next Time"));
+}
+
+void CApiMonitorUIDlg::OnUpdateSetBreakPointMeetHitTime(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnUpdateSetbreakpointAlways(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnUpdateSetbreakpointNexttime(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
+}
+
+void CApiMonitorUIDlg::OnUpdateSetbreakpointDelete(CCmdUI *pCmdUI)
+{
+    pCmdUI->Enable(IsModuleFunctionSelected());
 }

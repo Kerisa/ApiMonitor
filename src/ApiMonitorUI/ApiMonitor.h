@@ -4,28 +4,48 @@
 #include <vector>
 #include "pipemessage.h"
 
+struct ModuleInfoItem;
+struct ApiInfoItem;
+struct SetBreakConditionUI : public PipeDefine::msg::SetBreakCondition
+{
+    ApiInfoItem*    mBelongApi{ nullptr };
+
+    bool operator<(const SetBreakConditionUI& rhs) const
+    {
+        return this->func_addr < rhs.func_addr;
+    }
+};
+
+struct ApiInfoItem
+{
+    std::string          mName;
+    std::string          mForwardto;
+    intptr_t             mVa{ 0 };
+    bool                 mIsForward{ false };
+    bool                 mIsDataExport{ false };
+    bool                 mIsHook{ false };
+    SetBreakConditionUI  mBp;
+    ModuleInfoItem*      mBelongModule{ nullptr };  // Ç³¿½±´
+
+    ApiInfoItem(ModuleInfoItem* ref)
+    {
+        mBp.mBelongApi = this;
+        mBelongModule = ref;
+    }
+
+    void        BreakAlways();
+    void        BreakNextTime();
+    void        BreakOnTime(int time);
+    void        RemoveBp();
+    std::string GetBpDescription() const;
+};
+
 struct ModuleInfoItem
 {
-    std::string mName;
-    std::string mPath;
-    intptr_t    mBase{ 0 };
-    struct ApiEntry
-    {
-        std::string                         mName;
-        std::string                         mForwardto;
-        intptr_t                            mVa{ 0 };
-        bool                                mIsForward{ false };
-        bool                                mIsDataExport{ false };
-        bool                                mIsHook{ false };
-        PipeDefine::msg::SetBreakCondition  mBp;
-
-        void        BreakAlways();
-        void        BreakNextTime();
-        void        BreakOnTime(int time);
-        void        RemoveBp();
-        std::string GetBpDescription() const;
-    };
-    std::vector<ApiEntry> mApis;
+    std::string                 mName;
+    std::string                 mPath;
+    intptr_t                    mBase{ 0 };
+    std::vector<ApiInfoItem>    mApis;
 };
 
 struct ApiLogItem
@@ -48,37 +68,6 @@ public:
 
     Handler mMsgHandler;
     void* mUserData{ nullptr };
-    bool mConditionReady{ false };
-
-    // debug
-    long long outputdbgstr{ 0 };
-    std::vector<ModuleInfoItem> mModuleApis;
-
-    PipeController()
-    {
-        InitializeCriticalSection(&mPipeMsgCS);
-    }
-
-    ~PipeController()
-    {
-        DeleteCriticalSection(&mPipeMsgCS);
-    }
-
-private:
-    std::vector<PipeDefine::msg::SetBreakCondition>* Lock()
-    {
-        EnterCriticalSection(&mPipeMsgCS);
-        return &mBreakConditions;
-    }
-
-    void UnLock()
-    {
-        LeaveCriticalSection(&mPipeMsgCS);
-    }
-
-private:
-    CRITICAL_SECTION mPipeMsgCS;
-    std::vector<PipeDefine::msg::SetBreakCondition> mBreakConditions;
 };
 
 class Monitor

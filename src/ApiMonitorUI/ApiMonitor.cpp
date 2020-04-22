@@ -217,43 +217,46 @@ int Monitor::LoadFile(const std::wstring& filePath)
     //mControllerRef->UnLock();
     //mControllerRef->mConditionReady = true;
 
+    DWORD status = STATUS_TIMEOUT;
+    while (!mStopMonitor && status != WAIT_OBJECT_0)
+    {
+        status = WaitForSingleObject(pi.hProcess, 1000);
+    }
+    
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-
-    while (!mStopMonitor)
-        Sleep(1);
     ps.StopServer();
     th.join();
     return 0;
 }
 
-void ModuleInfoItem::ApiEntry::BreakAlways()
+void ApiInfoItem::BreakAlways()
 {
     RemoveBp();
     mBp.break_always = true;
 }
 
-void ModuleInfoItem::ApiEntry::BreakNextTime()
+void ApiInfoItem::BreakNextTime()
 {
     RemoveBp();
     mBp.break_next_time = true;
 }
 
-void ModuleInfoItem::ApiEntry::BreakOnTime(int time)
+void ApiInfoItem::BreakOnTime(int time)
 {
     RemoveBp();
     mBp.break_invoke_time = true;
     mBp.invoke_time = time;
 }
 
-void ModuleInfoItem::ApiEntry::RemoveBp()
+void ApiInfoItem::RemoveBp()
 {
     mBp.break_call_from = false;
     mBp.break_invoke_time = false;
     mBp.break_next_time = false;
 }
 
-std::string ModuleInfoItem::ApiEntry::GetBpDescription() const
+std::string ApiInfoItem::GetBpDescription() const
 {
     assert(mBp.break_next_time + mBp.break_call_from + mBp.break_invoke_time <= 1);
     if (mBp.break_always)
