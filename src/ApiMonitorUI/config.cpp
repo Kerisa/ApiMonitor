@@ -164,6 +164,7 @@ bool DllFilterConfig::CheckDllApiMatch(ModuleInfoItem * mii) const
             return false;
         }
     }
+    return true;
 }
 
 DllFilterConfig * DllFilterConfig::GetConfig()

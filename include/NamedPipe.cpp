@@ -1,5 +1,6 @@
 
 #include <atomic>
+#include <array>
 #include <cassert>
 #include <exception>
 #include <thread>
@@ -14,14 +15,15 @@ namespace Detail
 {
     typedef struct
     {
-        static constexpr int BUFSIZE = 1024*1024;
+        static constexpr int WRITE_BUFSIZE = 1024*1024;
+        static constexpr int READ_BUFSIZE  = 8*1024*1024;
 
         OVERLAPPED  oOverlap;
         HANDLE      hPipeInst;
         bool        Released;
-        uint8_t     chRequest[BUFSIZE];
+        std::array<uint8_t, READ_BUFSIZE>  chRequest;
         uint32_t    cbRead;
-        uint8_t     chReply[BUFSIZE];
+        std::array<uint8_t, WRITE_BUFSIZE> chReply;
         uint32_t    cbToWrite;
         void*       pUserData;
         NamedPipeServer::ReplayFuncType SetWriteMsg;
@@ -63,8 +65,8 @@ namespace Detail
         {
             fRead = ReadFileEx(
                 lpPipeInst->hPipeInst,
-                lpPipeInst->chRequest,
-                PIPEINST::BUFSIZE,
+                lpPipeInst->chRequest.data(),
+                lpPipeInst->chRequest.size(),
                 (LPOVERLAPPED)lpPipeInst,
                 (LPOVERLAPPED_COMPLETION_ROUTINE)ServerCompletedReadRoutine
             );
@@ -86,19 +88,19 @@ namespace Detail
             lpPipeInst->cbToWrite = 0;
 
             lpPipeInst->SetWriteMsg(
-                lpPipeInst->chRequest,
+                lpPipeInst->chRequest.data(),
                 cbBytesRead,
-                lpPipeInst->chReply,
+                lpPipeInst->chReply.data(),
                 &lpPipeInst->cbToWrite,
-                sizeof(lpPipeInst->chReply),
+                lpPipeInst->chReply.size(),
                 lpPipeInst->pUserData
             );
 
-            assert(lpPipeInst->cbToWrite < sizeof(lpPipeInst->chReply));
+            assert(lpPipeInst->cbToWrite < lpPipeInst->chReply.size());
 
             fWrite = WriteFileEx(
                 lpPipeInst->hPipeInst,
-                lpPipeInst->chReply,
+                lpPipeInst->chReply.data(),
                 lpPipeInst->cbToWrite,
                 (LPOVERLAPPED)lpPipeInst,
                 (LPOVERLAPPED_COMPLETION_ROUTINE)ServerCompletedWriteRoutine);
@@ -194,8 +196,8 @@ bool NamedPipeServer::NamedPipeServerImpl::CreateAndConnectInstance(HANDLE *pipe
         PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
         PIPE_WAIT | (mMessageModePipe ? (PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE) : (PIPE_TYPE_BYTE | PIPE_READMODE_BYTE)),
         PIPE_UNLIMITED_INSTANCES,
-        Detail::PIPEINST::BUFSIZE,
-        Detail::PIPEINST::BUFSIZE,
+        Detail::PIPEINST::WRITE_BUFSIZE,
+        Detail::PIPEINST::WRITE_BUFSIZE,
         PIPE_TIMEOUT,
         NULL
     );

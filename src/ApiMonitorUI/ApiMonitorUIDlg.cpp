@@ -289,6 +289,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     while ((const uint8_t *)msg - readData < readDataSize)
     {
         bool isUnknown = false;
+        ASSERT(((intptr_t)msg + PipeDefine::Message::HeaderLength + msg->ContentSize <= (intptr_t)readData + readDataSize) && "pipe read buffer overflow");
         switch (msg->type)
         {
         case PipeDefine::Pipe_C_Req_Inited: {
