@@ -315,14 +315,14 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             me->mBase = m.module_base;
             for (size_t i = 0; i < m.apis.size(); ++i)
             {
-                me->mApis.emplace_back(me);
-                ApiInfoItem& ae = me->mApis.back();
-                ae.mName = m.apis[i].name;
-                ae.mVa = m.apis[i].va;
-                ae.mIsForward = m.apis[i].forward_api;
-                ae.mIsDataExport = m.apis[i].data_export;
-                ae.mForwardto = m.apis[i].forwardto;
-                ae.mBp.func_addr = ae.mVa;
+                me->mApis.push_back(new ApiInfoItem(me));
+                ApiInfoItem* ae = me->mApis.back();
+                ae->mName = m.apis[i].name;
+                ae->mVa = m.apis[i].va;
+                ae->mIsForward = m.apis[i].forward_api;
+                ae->mIsDataExport = m.apis[i].data_export;
+                ae->mForwardto = m.apis[i].forwardto;
+                ae->mBp.func_addr = ae->mVa;
                 //if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
                 //    pc->outputdbgstr = m.apis[i].va;
             }
@@ -335,16 +335,16 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 for (size_t i = 0; i < me->mApis.size(); ++i)
                 {
                     PipeDefine::msg::ApiFilter::Api filter_api;
-                    filter_api.func_addr        = me->mApis[i].mVa;
-                    filter_api.filter           = me->mApis[i].mIsHook;        // 由 UI 更新
+                    filter_api.func_addr        = me->mApis[i]->mVa;
+                    filter_api.filter           = me->mApis[i]->mIsHook;        // 由 UI 更新
 
-                    filter_api.bc_always        = me->mApis[i].mBp.break_always;
-                    filter_api.bc_next_time     = me->mApis[i].mBp.break_next_time;
-                    filter_api.bc_call_from     = me->mApis[i].mBp.break_call_from;
-                    filter_api.bc_invoke_time   = me->mApis[i].mBp.break_invoke_time;
-                    filter_api.call_from        = me->mApis[i].mBp.call_from;
-                    filter_api.func_addr        = me->mApis[i].mBp.func_addr;
-                    filter_api.invoke_time      = me->mApis[i].mBp.invoke_time;
+                    filter_api.bc_always        = me->mApis[i]->mBp.break_always;
+                    filter_api.bc_next_time     = me->mApis[i]->mBp.break_next_time;
+                    filter_api.bc_call_from     = me->mApis[i]->mBp.break_call_from;
+                    filter_api.bc_invoke_time   = me->mApis[i]->mBp.break_invoke_time;
+                    filter_api.call_from        = me->mApis[i]->mBp.call_from;
+                    filter_api.func_addr        = me->mApis[i]->mBp.func_addr;
+                    filter_api.invoke_time      = me->mApis[i]->mBp.invoke_time;
 
                     filter.apis.push_back(filter_api);
                 }
@@ -432,13 +432,13 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     ModuleInfoItem* mii = (ModuleInfoItem*)wParam;
 
     // 配置中的 api 数量与实际数量相同时应用配置里的设置
-    if (DllFilterConfig::GetConfig()->GetModuleApiCountInConfig(mii->mPath) == mii->mApis.size())
+    if (DllFilterConfig::GetConfig()->CheckDllApiMatch(mii))
     {
         for (size_t i = 0; i < mii->mApis.size(); ++i)
         {
-            auto s = DllFilterConfig::GetConfig()->GetApiHookStatus(mii->mPath, mii->mApis[i].mName);
+            auto s = DllFilterConfig::GetConfig()->GetApiHookStatus(mii->mPath, mii->mApis[i]->mName);
             ASSERT(s == DllFilterConfig::kHook || s == DllFilterConfig::kIgnore);
-            mii->mApis[i].mIsHook = (s == DllFilterConfig::kHook);
+            mii->mApis[i]->mIsHook = (s == DllFilterConfig::kHook);
         }
     }
     else
@@ -449,8 +449,8 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     m_Modules.push_back(mii);
     for (size_t i = 0; i < mii->mApis.size(); ++i)
     {
-        if (mii->mApis[i].IsBpSet())
-            m_BreakPointsRef.insert(&mii->mApis[i].mBp);
+        if (mii->mApis[i]->IsBpSet())
+            m_BreakPointsRef.insert(&mii->mApis[i]->mBp);
     }
 
     HTREEITEM hRoot = m_treeModuleList.GetTreeCtrl().GetRootItem();
@@ -465,18 +465,18 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
     int hookCount = 0;
     for (size_t i = 0; i < mii->mApis.size(); ++i)
     {
-        std::string name = mii->mApis[i].mName;
-        if (mii->mApis[i].mIsForward)
+        std::string name = mii->mApis[i]->mName;
+        if (mii->mApis[i]->mIsForward)
         {
             name += "(-> ";
-            name += mii->mApis[i].mForwardto;
+            name += mii->mApis[i]->mForwardto;
             name += ")";
         }
         HTREEITEM hApi = m_treeModuleList.GetTreeCtrl().InsertItem(ToCString(name), NULL, NULL, hMod);
-        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_VA, ToCString(mii->mApis[i].mVa, true));
-        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_BreakPoint, ToCString(mii->mApis[i].GetBpDescription()));
-        m_treeModuleList.GetTreeCtrl().SetCheck(hApi, mii->mApis[i].mIsHook);
-        hookCount += (int)mii->mApis[i].mIsHook;
+        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_VA, ToCString(mii->mApis[i]->mVa, true));
+        m_treeModuleList.SetItemText(hApi, TreeCtrlColumnIndex_BreakPoint, ToCString(mii->mApis[i]->GetBpDescription()));
+        m_treeModuleList.GetTreeCtrl().SetCheck(hApi, mii->mApis[i]->mIsHook);
+        hookCount += (int)mii->mApis[i]->mIsHook;
     }
     m_treeModuleList.GetTreeCtrl().SetCheck(hMod, mii->mApis.size() == hookCount);
     m_treeModuleList.SetItemText(hMod, TreeCtrlColumnIndex_HookCount, ToCString(hookCount));
@@ -592,11 +592,11 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
            << std::hex << tmpModule[i].mBase << "\n";
         for (size_t k = 0; k < tmpModule[i].mApis.size(); ++k)
         {
-            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " [" << (tmpModule[i].mApis[k].mIsHook ? "+" : "-") << "] " << tmpModule[i].mApis[k].mName;
-            if (tmpModule[i].mApis[k].mIsForward)
-                ss << "--> " << tmpModule[i].mApis[k].mForwardto;
+            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " [" << (tmpModule[i].mApis[k]->mIsHook ? "+" : "-") << "] " << tmpModule[i].mApis[k]->mName;
+            if (tmpModule[i].mApis[k]->mIsForward)
+                ss << "--> " << tmpModule[i].mApis[k]->mForwardto;
             else
-                ss << ", VA: " << tmpModule[i].mApis[k].mVa << ", DataExport: " << (tmpModule[i].mApis[k].mIsDataExport ? "Yes" : "No");
+                ss << ", VA: " << tmpModule[i].mApis[k]->mVa << ", DataExport: " << (tmpModule[i].mApis[k]->mIsDataExport ? "Yes" : "No");
             ss << "\n";
         }
         ss << "\n";
@@ -682,8 +682,8 @@ SetBreakConditionUI * CApiMonitorUIDlg::FindBreakConditionInfo(intptr_t funcVA)
     {
         for (size_t k = 0; k < m_Modules[i]->mApis.size(); ++k)
         {
-            if (funcVA == m_Modules[i]->mApis[k].mVa)
-                return &m_Modules[i]->mApis[k].mBp;
+            if (funcVA == m_Modules[i]->mApis[k]->mVa)
+                return &m_Modules[i]->mApis[k]->mBp;
         }
     }
     return nullptr;

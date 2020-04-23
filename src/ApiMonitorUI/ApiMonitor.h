@@ -46,7 +46,7 @@ struct ModuleInfoItem
     std::string                 mName;
     std::string                 mPath;
     intptr_t                    mBase{ 0 };
-    std::vector<ApiInfoItem>    mApis;
+    std::vector<ApiInfoItem*>   mApis;
 };
 
 struct ApiLogItem

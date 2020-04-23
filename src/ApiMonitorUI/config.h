@@ -22,6 +22,7 @@ public:
     void            UpdateApi(const std::string& dllPath, const std::string& apiName, Status s);
     Status          GetApiHookStatus(const std::string& dllPath, const std::string& apiName);
     size_t          GetModuleApiCountInConfig(const std::string& dllPath) const;
+    bool            CheckDllApiMatch(ModuleInfoItem* mii) const;
 
     static DllFilterConfig* GetConfig();
 

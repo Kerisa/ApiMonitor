@@ -146,6 +146,26 @@ size_t DllFilterConfig::GetModuleApiCountInConfig(const std::string & dllPath) c
     return it->second.mApis.size();
 }
 
+bool DllFilterConfig::CheckDllApiMatch(ModuleInfoItem * mii) const
+{
+    if (!mii)
+        return false;
+
+    // 配置中保存同名 dll 导出函数的并集，所以至少大于等于目标 dll 的导出函数数量
+
+    if (GetModuleApiCountInConfig(mii->mPath) < mii->mApis.size())
+        return false;
+
+    for (size_t i = 0; i < mii->mApis.size(); ++i)
+    {
+        auto s = DllFilterConfig::GetConfig()->GetApiHookStatus(mii->mPath, mii->mApis[i]->mName);
+        if (s != DllFilterConfig::kHook && s != DllFilterConfig::kIgnore)
+        {
+            return false;
+        }
+    }
+}
+
 DllFilterConfig * DllFilterConfig::GetConfig()
 {
     if (!msConfig)

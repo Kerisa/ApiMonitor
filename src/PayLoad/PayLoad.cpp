@@ -19,55 +19,61 @@ PARAM* g_Param;
 class SStream
 {
 public:
-    SStream() { mBuf[0] = '\0'; }
+    SStream() { mBuf.resize(1024); }
     SStream& operator<<(const char* s)
     {
         if (s)
-            strcat_s(mBuf, sizeof(mBuf), s);
+            strcat_s(mBuf.data(), mBuf.size(), s);
         else
-            strcat_s(mBuf, sizeof(mBuf), "(null passed)");
+            strcat_s(mBuf.data(), mBuf.size(), "(null passed)");
         return *this;
     }
     SStream& operator<<(const Allocator::string& s)
     {
-        strcat_s(mBuf, sizeof(mBuf), s.c_str());
+        strcat_s(mBuf.data(), mBuf.size(), s.c_str());
         return *this;
     }
     SStream& operator<<(int i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%d", i);
-        strcat_s(mBuf, sizeof(mBuf), buf);
+        strcat_s(mBuf.data(), mBuf.size(), buf);
         return *this;
     }
     SStream& operator<<(unsigned long i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%u", i);
-        strcat_s(mBuf, sizeof(mBuf), buf);
+        strcat_s(mBuf.data(), mBuf.size(), buf);
         return *this;
     }
     SStream& operator<<(unsigned __int64 i)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "%llu", i);
-        strcat_s(mBuf, sizeof(mBuf), buf);
+        strcat_s(mBuf.data(), mBuf.size(), buf);
+        return *this;
+    }
+    SStream& operator<<(__int64 i)
+    {
+        char buf[32];
+        sprintf_s(buf, sizeof(buf), "%lld", i);
+        strcat_s(mBuf.data(), mBuf.size(), buf);
         return *this;
     }
     SStream& operator<<(void* p)
     {
         char buf[32];
         sprintf_s(buf, sizeof(buf), "0x%p", p);
-        strcat_s(mBuf, sizeof(mBuf), buf);
+        strcat_s(mBuf.data(), mBuf.size(), buf);
         return *this;
     }
 
     SStream& operator<<(unsigned int i) { return operator<<(static_cast<unsigned long>(i)); }
-    SStream& operator<<(long long i) { return operator<<(static_cast<__int64>(i)); }
     SStream& operator<<(HMODULE i) { return operator<<(static_cast<void*>(i)); }
-    const char* str() const { return mBuf; }
+    const char* str() const { return mBuf.data(); }
 private:
-    char mBuf[1024];
+    std::vector<char, Allocator::allocator<char>> mBuf;
 };
 
 __declspec(naked) intptr_t GetCurThreadId()
@@ -176,7 +182,7 @@ public:
 HookManager* g_HookManager;
 
 
-#define PRINT_DEBUG_LOG
+//#define PRINT_DEBUG_LOG
 
 #ifdef PRINT_DEBUG_LOG
     #define Vlog(cond) do { \
@@ -474,7 +480,7 @@ RETRY_READ:
             }
 
             {
-                Lock lk(&msPipe->csRead, msPipe->mThreadLockInited);
+                Lock lk(&msPipe->csWrite, msPipe->mThreadLockInited);
                 if (!msPipe->mMsgWriteBuffer->empty())
                 {
                     DWORD dummy = 0;
@@ -1446,13 +1452,13 @@ NTSTATUS NTAPI NtMapViewOfSectionPad(
     ULONG           Win32Protect
 )
 {
-    static_assert(PARAM::PARAM_ADDR                         == 0x7ffd0000, "offset out of date");
+    static_assert(PARAM::PARAM_ADDR                         == 0x20000000, "offset out of date");
     static_assert((DWORD)&((PARAM*)0)->NtMapViewOfSectionServerId == 0x20, "offset out of date");
     static_assert((DWORD)&((PARAM*)0)->f_Wow64SystemServiceCall   == 0x24, "offset out of date");
     __asm {
-        mov edx, 0x7ffd0024
+        mov edx, 0x20000024
         mov edx, dword ptr [edx]
-        mov eax, 0x7ffd0020
+        mov eax, 0x20000020
         mov eax, dword ptr [eax]
         call edx
         cmp eax, 0

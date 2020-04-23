@@ -19,6 +19,7 @@ namespace detail
     {
         if (str.size() < SerialHeaderSizeSpace)
             return false;
+        str.insert(str.end(), 4, '<');
         *(SerialHeaderSize*)&str[0] = str.size();
         return true;
     }

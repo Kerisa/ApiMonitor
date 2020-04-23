@@ -84,13 +84,13 @@ BOOL CAddModuleFilterDlg::OnInitDialog()
     for (size_t i = 0; i < mModuleInfoItem->mApis.size(); ++i)
     {
         idx = m_listModuleApis.InsertItem(i, _T("---"));
-        CString name    = ToCString(mModuleInfoItem->mApis[i].mName);
-        CString va      = ToCString(mModuleInfoItem->mApis[i].mVa, true);
-        CString forward = ToCString(mModuleInfoItem->mApis[i].mForwardto);
+        CString name    = ToCString(mModuleInfoItem->mApis[i]->mName);
+        CString va      = ToCString(mModuleInfoItem->mApis[i]->mVa, true);
+        CString forward = ToCString(mModuleInfoItem->mApis[i]->mForwardto);
         m_listModuleApis.SetItem(idx, ListModuleApisColumn_Name   , LVIF_TEXT, name, 0, 0, 0, 0);
         m_listModuleApis.SetItem(idx, ListModuleApisColumn_VA     , LVIF_TEXT, va, 0, 0, 0, 0);
-        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Forward, LVIF_TEXT, mModuleInfoItem->mApis[i].mIsForward ? forward : _T(""), 0, 0, 0, 0);
-        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Data   , LVIF_TEXT, mModuleInfoItem->mApis[i].mIsDataExport ? _T("1") : _T("0"), 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Forward, LVIF_TEXT, mModuleInfoItem->mApis[i]->mIsForward ? forward : _T(""), 0, 0, 0, 0);
+        m_listModuleApis.SetItem(idx, ListModuleApisColumn_Data   , LVIF_TEXT, mModuleInfoItem->mApis[i]->mIsDataExport ? _T("1") : _T("0"), 0, 0, 0, 0);
 
         ListView_SetCheckState(m_listModuleApis, idx, 2);
     }
@@ -134,13 +134,13 @@ void CAddModuleFilterDlg::OnOK()
 {
     ASSERT(m_listModuleApis.GetItemCount() == mModuleInfoItem->mApis.size());
     bool save = m_checkSaveToConfig.GetCheck();
-    for (int i = 0; i < mModuleInfoItem->mApis.size(); ++i)
+    for (size_t i = 0; i < mModuleInfoItem->mApis.size(); ++i)
     {
         bool checked = ListView_GetCheckState(m_listModuleApis, i);
-        mModuleInfoItem->mApis[i].mIsHook = checked;
+        mModuleInfoItem->mApis[i]->mIsHook = checked;
         if (save)
         {
-            DllFilterConfig::GetConfig()->UpdateApi(mModuleInfoItem->mPath, mModuleInfoItem->mApis[i].mName,
+            DllFilterConfig::GetConfig()->UpdateApi(mModuleInfoItem->mPath, mModuleInfoItem->mApis[i]->mName,
                 checked ? DllFilterConfig::kHook : DllFilterConfig::kIgnore);
         }
     }
@@ -164,10 +164,10 @@ void CAddModuleFilterDlg::OnBnClickedCheckAll()
 
     bool checked = m_checkAll.GetCheck();
     ASSERT(m_listModuleApis.GetItemCount() == mModuleInfoItem->mApis.size());
-    for (int i = 0; i < mModuleInfoItem->mApis.size(); ++i)
+    for (size_t i = 0; i < mModuleInfoItem->mApis.size(); ++i)
     {
         ListView_SetCheckState(m_listModuleApis, i, checked);
-        mModuleInfoItem->mApis[i].mIsHook = checked;
+        mModuleInfoItem->mApis[i]->mIsHook = checked;
     }
 
     UpdateData(FALSE);
@@ -208,15 +208,15 @@ void CAddModuleFilterDlg::OnSetbreakpointAlways()
 
     TCHAR buffer[512];
     m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
-    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
-    mModuleInfoItem->mApis[index].BreakAlways();
+    ASSERT(ToCString(mModuleInfoItem->mApis[index]->mName) == buffer);
+    mModuleInfoItem->mApis[index]->BreakAlways();
 
-    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index]->GetBpDescription()));
 }
 
 void CAddModuleFilterDlg::OnSetbreakpointMeethittime()
 {
-    mModuleInfoItem->mApis[0].mIsHook;
+    mModuleInfoItem->mApis[0]->mIsHook;
     CSetBreakPointTimeDialog dlg(this);
     if (IDOK != dlg.DoModal())
         return;
@@ -235,10 +235,10 @@ void CAddModuleFilterDlg::OnSetbreakpointMeethittime()
 
     TCHAR buffer[512];
     m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
-    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
-    mModuleInfoItem->mApis[index].BreakOnTime(times);
+    ASSERT(ToCString(mModuleInfoItem->mApis[index]->mName) == buffer);
+    mModuleInfoItem->mApis[index]->BreakOnTime(times);
 
-    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index]->GetBpDescription()));
 }
 
 void CAddModuleFilterDlg::OnSetbreakpointDelete()
@@ -253,10 +253,10 @@ void CAddModuleFilterDlg::OnSetbreakpointDelete()
 
     TCHAR buffer[512];
     m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
-    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
-    mModuleInfoItem->mApis[index].RemoveBp();
+    ASSERT(ToCString(mModuleInfoItem->mApis[index]->mName) == buffer);
+    mModuleInfoItem->mApis[index]->RemoveBp();
 
-    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index]->GetBpDescription()));
 }
 
 void CAddModuleFilterDlg::OnSetbreakpointNexttime()
@@ -271,8 +271,8 @@ void CAddModuleFilterDlg::OnSetbreakpointNexttime()
 
     TCHAR buffer[512];
     m_listModuleApis.GetItemText(index, ListModuleApisColumn_Name, buffer, sizeof(buffer));
-    ASSERT(ToCString(mModuleInfoItem->mApis[index].mName) == buffer);
-    mModuleInfoItem->mApis[index].BreakNextTime();
+    ASSERT(ToCString(mModuleInfoItem->mApis[index]->mName) == buffer);
+    mModuleInfoItem->mApis[index]->BreakNextTime();
 
-    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index].GetBpDescription()));
+    m_listModuleApis.SetItemText(index, ListModuleApisColumn_BreakPoint, ToCString(mModuleInfoItem->mApis[index]->GetBpDescription()));
 }
