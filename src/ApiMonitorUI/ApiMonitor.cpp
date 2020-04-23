@@ -185,6 +185,13 @@ int Monitor::LoadFile(const std::wstring& filePath)
     BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &mProcessInfo);
 
     LPVOID paramBase = VirtualAllocEx(mProcessInfo.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    assert(paramBase);
+    if (!paramBase)
+    {
+        CloseHandle(mProcessInfo.hProcess);
+        CloseHandle(mProcessInfo.hThread);
+        return -1;
+    }
 
     SIZE_T R = 0;
     PARAM param;
