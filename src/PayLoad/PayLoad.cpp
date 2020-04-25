@@ -764,6 +764,7 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
     if (strcmp(funcName, "LdrLoadDll"))
     {
         //
+        // push eax
         // push edx
         // push ecx
         // mov ecx, esp             ; <--- original return addr as call from addr
@@ -775,31 +776,34 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
         // ret
         // pop ecx                  ; <--- here continue_offset
         // pop edx
+        // pop eax
         // push original_func
         // ret
         //
 
-        e->mBytesCode[0] = '\x52';
-        e->mBytesCode[1] = '\x51';
-        e->mBytesCode[2] = '\x8b';
-        e->mBytesCode[3] = '\xcc';
-        e->mBytesCode[4] = '\x83';
-        e->mBytesCode[5] = '\xc1';
-        e->mBytesCode[6] = '\x08';
-        e->mBytesCode[7] = '\x51';
-        e->mBytesCode[8] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[9] = (ULONG_PTR)e->mSelfIndex;
-        e->mBytesCode[13] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[14] = (ULONG_PTR)&e->mBytesCode[24];
-        e->mBytesCode[18] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[19] = (ULONG_PTR)e->mHookFunction;
-        e->mBytesCode[23] = '\xc3';
-        e->mBytesCode[24] = '\x59';
-        e->mBytesCode[25] = '\x5a';
-        e->mBytesCode[26] = '\x68';
-        *(ULONG_PTR*)&e->mBytesCode[27] = (ULONG_PTR)oldEntry;
-        e->mBytesCode[31] = '\xc3';
-        e->mBytesCode[32] = '\xcc';
+        e->mBytesCode[0] = '\x50';
+        e->mBytesCode[1] = '\x52';
+        e->mBytesCode[2] = '\x51';
+        e->mBytesCode[3] = '\x8b';
+        e->mBytesCode[4] = '\xcc';
+        e->mBytesCode[5] = '\x83';
+        e->mBytesCode[6] = '\xc1';
+        e->mBytesCode[7] = '\x08';
+        e->mBytesCode[8] = '\x51';
+        e->mBytesCode[9] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[10] = (ULONG_PTR)e->mSelfIndex;
+        e->mBytesCode[14] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[15] = (ULONG_PTR)&e->mBytesCode[25];
+        e->mBytesCode[19] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[20] = (ULONG_PTR)e->mHookFunction;
+        e->mBytesCode[24] = '\xc3';
+        e->mBytesCode[25] = '\x59';
+        e->mBytesCode[26] = '\x5a';
+        e->mBytesCode[27] = '\x58';
+        e->mBytesCode[28] = '\x68';
+        *(ULONG_PTR*)&e->mBytesCode[29] = (ULONG_PTR)oldEntry;
+        e->mBytesCode[33] = '\xc3';
+        e->mBytesCode[34] = '\xcc';
     }
     else
     {
