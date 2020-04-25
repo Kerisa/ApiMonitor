@@ -863,6 +863,15 @@ void HookModuleExportTable(HMODULE hmod, const string& modname, const string& mo
     bool apply_filter = (filter.module_name == modname);
     Vlog("[HookModuleExportTable] enter, hmod: " << (LPVOID)hmod << ", apply filter: " << apply_filter);
 
+    size_t count = std::count_if(filter.apis.begin(), filter.apis.end(), [](const PipeDefine::msg::ApiFilter::Api& api) {
+        return api.filter;
+    });
+    if (count == 0)
+    {
+        Vlog("[HookModuleExportTable] hook count == 0, exit");
+        return;
+    }
+
     std::map<long long, PipeDefine::msg::ApiFilter::Api, std::less<long long>, Allocator::allocator<std::pair<long long, PipeDefine::msg::ApiFilter::Api>>> filter_apis;
     if (apply_filter)
     {
@@ -1138,6 +1147,19 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
         filter.Unserial(content);
         Vlog("[DoModuleHook] reply filter count: " << std::count_if(filter.apis.begin(), filter.apis.end(), [](PipeDefine::msg::ApiFilter::Api& a) { return a.filter; }));
     }
+    else
+    {
+        // ntdll 自行构造
+        filter.module_name = msgModuleApis.module_name;
+        for (size_t i = 0; i < msgModuleApis.apis.size(); ++i)
+        {
+            PipeDefine::msg::ApiFilter::Api a;
+            a.filter = true;
+            a.func_addr = msgModuleApis.apis[i].va;
+            filter.apis.push_back(a);
+        }
+    }
+
     HookModuleExportTable(hmod, moduleName, path, filter);
 
     g_HookManager->AppendHookedModule(hmod);
@@ -1235,7 +1257,7 @@ void GetApis(bool ntdllOnly)
         if (!param->f_ ## fn) \
             param->f_ ## fn = (FN_ ## fn)MiniGetFunctionAddress((ULONG_PTR)param->ntdllBase, # fn); \
         if (!param->f_ ## fn) \
-            throw; \
+            throw "ntapi "# fn "not found"; \
     } while (0)
 
     GET_NTDLL_API(NtSuspendProcess);
@@ -1363,6 +1385,11 @@ void InitNtdllApiAndEnv()
 void InitKernelDllAndEnv()
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
+    if (!param->bNtdllInited)
+        return;
+    if (param->bOthersInited)
+        return;
+
     if (!param->kernelBase)
     {
         wchar_t buffer[MAX_PATH] = L"kernelbase.dll";
@@ -1385,7 +1412,7 @@ void InitKernelDllAndEnv()
         NTSTATUS status = param->f_LdrLoadDll(0, 0, &name, &hKernel);
         param->kernel32 = (LPVOID)hKernel;
     }
-    if (!param->bOthersInited && param->kernel32 && param->kernelBase)
+    if (param->kernel32 && param->kernelBase)
     {
         GetApis(false);
         BuildPipe(true);
