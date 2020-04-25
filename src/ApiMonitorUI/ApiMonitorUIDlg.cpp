@@ -335,17 +335,22 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
                 filter.module_name = m.module_name;
                 for (size_t i = 0; i < me->mApis.size(); ++i)
                 {
+                    // 由 UI 更新
                     PipeDefine::msg::ApiFilter::Api filter_api;
-                    filter_api.func_addr        = me->mApis[i]->mVa;
-                    filter_api.filter           = me->mApis[i]->mIsHook;        // 由 UI 更新
-
-                    filter_api.bc_always        = me->mApis[i]->mBp.break_always;
-                    filter_api.bc_next_time     = me->mApis[i]->mBp.break_next_time;
-                    filter_api.bc_call_from     = me->mApis[i]->mBp.break_call_from;
-                    filter_api.bc_invoke_time   = me->mApis[i]->mBp.break_invoke_time;
+                    if (me->mApis[i]->mIsHook)
+                        filter_api.SetFilter();
+                    if (me->mApis[i]->mBp.break_always)
+                        filter_api.SetBreakALways();
+                    if (me->mApis[i]->mBp.break_next_time)
+                        filter_api.SetBreakNextTime();
+                    if (me->mApis[i]->mBp.break_call_from)
+                        filter_api.SetBreakCallFrom();
+                    if (me->mApis[i]->mBp.break_invoke_time)
+                        filter_api.SetBreakInvokeTime();
                     filter_api.call_from        = me->mApis[i]->mBp.call_from;
                     filter_api.func_addr        = me->mApis[i]->mBp.func_addr;
                     filter_api.invoke_time      = me->mApis[i]->mBp.invoke_time;
+                    ASSERT(me->mApis[i]->mVa == me->mApis[i]->mBp.func_addr);
 
                     filter.apis.push_back(filter_api);
                 }
@@ -398,7 +403,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
         writeData = originalWriteData + (*writeDataSize);
         msg = (PipeDefine::Message*)((intptr_t)msg + PipeDefine::Message::HeaderLength + msg->ContentSize);
     }
-    TRACE("Write: %d bytes\n", *writeDataSize);
+    //TRACE("Write: %d bytes\n", *writeDataSize);
 }
 
 

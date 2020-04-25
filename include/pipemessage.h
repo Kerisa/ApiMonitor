@@ -144,17 +144,31 @@ namespace msg
 
     struct ApiFilter
     {
+        static constexpr long FLAG_FILTER           = 1;
+        static constexpr long FLAG_BC_ALWAYS        = 2;
+        static constexpr long FLAG_BC_NEXT_TIME     = 4;
+        static constexpr long FLAG_BC_CALL_FROM     = 8;
+        static constexpr long FLAG_BC_INVOKE_TIME   = 16;
+
         Allocator::string module_name;
         struct Api
         {
             long long   func_addr           { 0 };       // VA
-            bool        filter              { false };
-            bool        bc_always           { false };
-            bool        bc_next_time        { false };
-            bool        bc_call_from        { false };
-            bool        bc_invoke_time      { false };
+            long        flags               { 0 };
             long        invoke_time         { 0 };
             long long   call_from           { 0 };
+
+            bool IsFilter() const           { return flags & FLAG_FILTER;         }
+            bool IsBreakALways() const      { return flags & FLAG_BC_ALWAYS;      }
+            bool IsBreakNextTime() const    { return flags & FLAG_BC_NEXT_TIME;   }
+            bool IsBreakCallFrom() const    { return flags & FLAG_BC_CALL_FROM;   }
+            bool IsBreakInvokeTime() const  { return flags & FLAG_BC_INVOKE_TIME; }
+
+            void SetFilter()                { flags |= FLAG_FILTER;               }
+            void SetBreakALways()           { flags |= FLAG_BC_ALWAYS;            }
+            void SetBreakNextTime()         { flags |= FLAG_BC_NEXT_TIME;         }
+            void SetBreakCallFrom()         { flags |= FLAG_BC_CALL_FROM;         }
+            void SetBreakInvokeTime()       { flags |= FLAG_BC_INVOKE_TIME;       }
         };
         std::vector<Api, Allocator::allocator<Api>> apis;
 
@@ -168,11 +182,7 @@ namespace msg
             for (size_t i = 0; i < apis.size(); ++i)
             {
                 SerialItem(vec, apis[i].func_addr);
-                SerialItem(vec, apis[i].filter);
-                SerialItem(vec, apis[i].bc_always);
-                SerialItem(vec, apis[i].bc_next_time);
-                SerialItem(vec, apis[i].bc_call_from);
-                SerialItem(vec, apis[i].bc_invoke_time);
+                SerialItem(vec, apis[i].flags);
                 SerialItem(vec, apis[i].invoke_time);
                 SerialItem(vec, apis[i].call_from);
             }
@@ -190,11 +200,7 @@ namespace msg
             {
                 Api& a = apis[i];
                 idx = ExtractItem(str, idx, a.func_addr);
-                idx = ExtractItem(str, idx, a.filter);
-                idx = ExtractItem(str, idx, a.bc_always);
-                idx = ExtractItem(str, idx, a.bc_next_time);
-                idx = ExtractItem(str, idx, a.bc_call_from);
-                idx = ExtractItem(str, idx, a.bc_invoke_time);
+                idx = ExtractItem(str, idx, a.flags);
                 idx = ExtractItem(str, idx, a.invoke_time);
                 idx = ExtractItem(str, idx, a.call_from);
             }

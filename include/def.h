@@ -229,8 +229,8 @@ typedef DWORD (WINAPI * FN_GetCurrentThreadId)();
 
 struct PARAM
 {
-    static const DWORD PARAM_ADDR = 0x20000000;
-    static const DWORD PARAM_SIZE = 4096;
+    static constexpr DWORD PARAM_ADDR = 0x20000000;
+
     LPVOID ntdllBase;
     LPVOID kernelBase;
     LPVOID kernel32;
@@ -287,4 +287,5 @@ struct PARAM
 
 
     CONTEXT ctx;
+    char ntdllFilterSerialData[90000];
 };

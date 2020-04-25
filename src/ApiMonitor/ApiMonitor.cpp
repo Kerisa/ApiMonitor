@@ -220,7 +220,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             {
                 PipeDefine::msg::ApiFilter::Api filter_api;
                 filter_api.func_addr = m.apis[i].va;
-                filter_api.filter = true;
+                filter_api.SetFilter();
                 filter.apis.push_back(filter_api);
             }
             str = filter.Serial();
@@ -274,7 +274,7 @@ int main(int argc, char** argv)
     PROCESS_INFORMATION pi = { 0 };
     BOOL success = CreateProcess(app, cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
 
-    LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, PARAM::PARAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    LPVOID paramBase = VirtualAllocEx(pi.hProcess, (LPVOID)PARAM::PARAM_ADDR, sizeof(PARAM), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
     SIZE_T R = 0;
     PARAM param;

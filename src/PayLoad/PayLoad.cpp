@@ -737,24 +737,24 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
     // 设置断点信息
     if (filter && filter->func_addr == (long long)oldEntry)
     {
-        if (filter->bc_call_from)
+        if (filter->IsBreakCallFrom())
         {
             Vlog("[AddHookRoutine] break when call from " << filter->call_from);
             e->mParams.mBreakCallFromAddr = filter->call_from;
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
         }
-        if (filter->bc_invoke_time)
+        if (filter->IsBreakInvokeTime())
         {
             Vlog("[AddHookRoutine] break when reach time " << filter->invoke_time);
             e->mParams.mBreakReachInvokeTime = filter->invoke_time;
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
         }
-        if (filter->bc_next_time)
+        if (filter->IsBreakNextTime())
         {
             Vlog("[AddHookRoutine] break at next call");
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
         }
-        if (filter->bc_always)
+        if (filter->IsBreakALways())
         {
             Vlog("[AddHookRoutine] break always");
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_ALWAYS;
@@ -768,7 +768,7 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
         // push edx
         // push ecx
         // mov ecx, esp             ; <--- original return addr as call from addr
-        // add ecx, 8
+        // add ecx, c
         // push ecx
         // push entry_index
         // push continue_offset     ; <--- new return addr
@@ -788,7 +788,7 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
         e->mBytesCode[4] = '\xcc';
         e->mBytesCode[5] = '\x83';
         e->mBytesCode[6] = '\xc1';
-        e->mBytesCode[7] = '\x08';
+        e->mBytesCode[7] = '\x0c';
         e->mBytesCode[8] = '\x51';
         e->mBytesCode[9] = '\x68';
         *(ULONG_PTR*)&e->mBytesCode[10] = (ULONG_PTR)e->mSelfIndex;
@@ -868,7 +868,7 @@ void HookModuleExportTable(HMODULE hmod, const string& modname, const string& mo
     Vlog("[HookModuleExportTable] enter, hmod: " << (LPVOID)hmod << ", apply filter: " << apply_filter);
 
     size_t count = std::count_if(filter.apis.begin(), filter.apis.end(), [](const PipeDefine::msg::ApiFilter::Api& api) {
-        return api.filter;
+        return api.IsFilter();
     });
     if (count == 0)
     {
@@ -970,7 +970,7 @@ void HookModuleExportTable(HMODULE hmod, const string& modname, const string& mo
                 if (it != filter_apis.end())
                     fa = &it->second;
             }
-            bool hook = fa ? fa->filter : true;
+            bool hook = fa ? fa->IsFilter() : true;
             if (!hook)
                 Vlog("[HookModuleExportTable] skip hook " << funcName << " due to filter");
             ULONG_PTR newRva = hook ? AddHookRoutine(modname, hmod, (PVOID)(lpImage + oldFunc[i]), &oldFunc[i], funcName, fa) : 0;
@@ -1158,7 +1158,7 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
         for (size_t i = 0; i < msgModuleApis.apis.size(); ++i)
         {
             PipeDefine::msg::ApiFilter::Api a;
-            a.filter = true;
+            a.SetFilter();
             a.func_addr = msgModuleApis.apis[i].va;
             filter.apis.push_back(a);
         }
