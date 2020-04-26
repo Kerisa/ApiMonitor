@@ -9,145 +9,9 @@
 #include "NamedPipe.h"
 #include "pipemessage.h"
 #include "ApiMonitor.h"
+#include "hookroutine.h"
 
 using namespace std;
-
-
-namespace Detail
-{
-
-
-typedef struct reloc_line
-{
-    WORD m_addr : 12;
-    WORD m_type : 4;
-} reloc_line;
-
-void LoadVReloc(ULONG_PTR hBase, bool bForce, ULONG_PTR delta)
-{
-    PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)(hBase + ((PIMAGE_DOS_HEADER)hBase)->e_lfanew);
-    if (imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress == 0)
-        return; // 没有重定位数据
-    if (hBase == imNH->OptionalHeader.ImageBase && bForce == FALSE)
-        return; // 装入了默认地址
-    if (delta == 0)
-        delta = hBase - imNH->OptionalHeader.ImageBase;
-    ULONG_PTR lpreloc = hBase + imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
-    PIMAGE_BASE_RELOCATION pimBR = (PIMAGE_BASE_RELOCATION)lpreloc;
-    while (pimBR->VirtualAddress != 0)
-    {
-        reloc_line* reline = (reloc_line*)((char*)pimBR + sizeof(IMAGE_BASE_RELOCATION));
-        int preNum = (pimBR->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(reloc_line);
-        for (int i = 0; i < preNum; ++i)
-        {
-            switch (reline->m_type)
-            {
-            case IMAGE_REL_BASED_HIGHLOW:
-                *(PDWORD)(hBase + pimBR->VirtualAddress + reline->m_addr) += delta;
-                break;
-            case IMAGE_REL_BASED_DIR64:
-                *(ULONG_PTR*)(hBase + pimBR->VirtualAddress + reline->m_addr) += delta;
-                break;
-            }
-            ++reline;
-        }
-        pimBR = (PIMAGE_BASE_RELOCATION)reline;
-    }
-}
-
-
-PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
-{
-    HMODULE hDll2 = LoadLibraryEx(dllPath, NULL, 0);
-    ULONG_PTR entry = (ULONG_PTR)GetProcAddress(hDll2, "Entry");
-    HANDLE hDll = CreateFile(dllPath, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (hDll == INVALID_HANDLE_VALUE)
-        return NULL;
-    std::vector<char> file(GetFileSize(hDll, 0));
-    SIZE_T R;
-    ReadFile(hDll, file.data(), file.size(), &R, 0);
-    CloseHandle(hDll);
-
-    char* imageData = (char*)file.data();
-    PIMAGE_NT_HEADERS ntHeader = (PIMAGE_NT_HEADERS)(imageData + ((PIMAGE_DOS_HEADER)imageData)->e_lfanew);
-    DWORD imageSize = ntHeader->OptionalHeader.SizeOfImage;
-    std::vector<char> memData(imageSize);
-    PIMAGE_SECTION_HEADER secHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)ntHeader + sizeof(IMAGE_NT_HEADERS));
-    DWORD secHeaderBegin = secHeader->VirtualAddress;
-    for (DWORD i = 0; i < ntHeader->FileHeader.NumberOfSections; ++i)
-    {
-        if (secHeader->PointerToRawData != 0)
-            secHeaderBegin = min(secHeader->PointerToRawData, secHeaderBegin);
-        memcpy(&memData[secHeader->VirtualAddress], imageData + secHeader->PointerToRawData, secHeader->SizeOfRawData);
-        ++secHeader;
-    }
-    memcpy(memData.data(), imageData, secHeaderBegin); // 复制 pe 头
-    PVOID newBase = VirtualAllocEx(hProcess, 0, imageSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    ULONG_PTR delta = (ULONG_PTR)newBase - (ULONG_PTR)ntHeader->OptionalHeader.ImageBase;
-    if (delta != 0) // 需要重定位
-        LoadVReloc((ULONG_PTR)memData.data(), TRUE, delta);
-    SIZE_T W = 0;
-    WriteProcessMemory(hProcess, newBase, memData.data(), imageSize, &W);
-    PVOID oep = (PVOID)(entry - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
-
-
-    HMODULE ntDllBase = GetModuleHandleA("ntdll.dll");
-    auto pLdrLoadDll = (FN_LdrLoadDll)GetProcAddress(ntDllBase, "LdrLoadDll");
-    vector<unsigned char> remoteMemory(0x200);
-    ReadProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100), remoteMemory.data(), remoteMemory.size(), &R);
-    bool found = false;
-    size_t position = 0;
-    for (size_t i = 0x100; i > 0 && !found; --i)
-    {
-        if (remoteMemory[i] == 0xcc)
-        {
-            int k = 0;
-            for (; k < 7; ++k)
-                if (remoteMemory[i - k] != 0xcc)
-                    break;
-            if (k == 7)
-            {
-                found = true;
-                position = i - 6;
-            }
-        }
-    }
-    assert(found);
-    if (found)
-    {
-        char jmp[2];
-        jmp[0] = '\xeb';
-        jmp[1] = position - (0x100 + 0x2);
-        WriteProcessMemory(hProcess, (LPVOID)pLdrLoadDll, jmp, sizeof(jmp), &R);
-
-        auto hook = GetProcAddress(hDll2, "HookLdrLoadDllPad");
-        char jmp2[6];
-        jmp2[0] = '\x68';
-        *(PDWORD)&jmp2[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
-        jmp2[5] = '\xc3';
-        WriteProcessMemory(hProcess, (LPVOID)((ULONG_PTR)pLdrLoadDll - 0x100 + position), jmp2, sizeof(jmp2), &R);
-    }
-
-
-    ///////////////////////////////////////////////////////////////////////////
-    // 拦截 NtMapViewOfSection
-    {
-        ULONG_PTR pNtMapViewOfSection = (ULONG_PTR)GetProcAddress(ntDllBase, "NtMapViewOfSection");
-        auto hook = GetProcAddress(hDll2, "NtMapViewOfSectionPad");
-        char jmp[6] = { 0 };
-        jmp[0] = '\x68';
-        *(PDWORD)&jmp[1] = (DWORD)((ULONG_PTR)hook - (ULONG_PTR)hDll2 + (ULONG_PTR)newBase);
-        jmp[5] = '\xc3';
-        WriteProcessMemory(hProcess, (LPVOID)pNtMapViewOfSection, jmp, sizeof(jmp), &R);
-    }
-
-    FreeLibrary(hDll2);
-    return oep;
-}
-
-
-}
-
 
 
 void Monitor::SetPipeHandler(PipeController * controller)
@@ -203,6 +67,19 @@ int Monitor::LoadFile(const std::wstring& filePath)
     param.ctx.ContextFlags = CONTEXT_ALL;
     GetThreadContext(mProcessInfo.hThread, &param.ctx);
 
+    assert(f_SetupNtdllFilter);
+    PipeDefine::msg::ModuleApis msgModuleApis;
+    CollectModuleInfo((HMODULE)param.ntdllBase, "ntdll.dll", GetDllNameFromExportDirectory((HMODULE)param.ntdllBase), msgModuleApis);
+    ModuleInfoItem mii;
+    ModuleInfoItem::FromIpcMessage(&mii, msgModuleApis);
+    f_SetupNtdllFilter(&mii);
+    PipeDefine::msg::ApiFilter filter;
+    ModuleInfoItem::ToIpcFilter(&mii, filter);
+    std::vector<char> v = filter.Serial();
+    assert(v.size() < sizeof(param.ntdllFilterSerialData));
+    memcpy_s(param.ntdllFilterSerialData, sizeof(param.ntdllFilterSerialData), v.data(), v.size());
+    param.ntdllFilterSerialDataSize = v.size();
+
     char bytesOfNtMapViewOfSectionPad[32] = { 0 };
     ReadProcessMemory(mProcessInfo.hProcess, (LPVOID)GetProcAddress((HMODULE)param.ntdllBase, "NtMapViewOfSection"), bytesOfNtMapViewOfSectionPad, sizeof(bytesOfNtMapViewOfSectionPad), &R);
     assert(bytesOfNtMapViewOfSectionPad[0] == '\xb8');  // mov eax,28h
@@ -211,7 +88,7 @@ int Monitor::LoadFile(const std::wstring& filePath)
     param.f_Wow64SystemServiceCall = (LPVOID)*(PDWORD)&bytesOfNtMapViewOfSectionPad[6];
     assert(*(PWORD)&bytesOfNtMapViewOfSectionPad[10] == 0xd2ff);  // call edx
     assert(param.f_Wow64SystemServiceCall != 0);
-    PVOID oep = Detail::BuildRemoteData(mProcessInfo.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
+    PVOID oep = BuildRemoteData(mProcessInfo.hProcess, TEXT("C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\PayLoad.dll"));
 
     WriteProcessMemory(mProcessInfo.hProcess, paramBase, &param, sizeof(param), &R);
     CONTEXT copy = param.ctx;
@@ -290,4 +167,53 @@ std::string ApiInfoItem::GetBpDescription() const
     }
     else
         return "";
+}
+
+ModuleInfoItem::~ModuleInfoItem()
+{
+    for (auto a : mApis)
+        delete a;
+}
+
+void ModuleInfoItem::FromIpcMessage(ModuleInfoItem* mii, const PipeDefine::msg::ModuleApis & m)
+{
+    mii->mName = m.module_name;
+    mii->mPath = m.module_path;
+    mii->mBase = m.module_base;
+    for (size_t i = 0; i < m.apis.size(); ++i)
+    {
+        mii->mApis.push_back(new ApiInfoItem(mii));
+        ApiInfoItem* ae = mii->mApis.back();
+        ae->mName = m.apis[i].name;
+        ae->mVa = m.apis[i].va;
+        ae->mIsForward = m.apis[i].forward_api;
+        ae->mIsDataExport = m.apis[i].data_export;
+        ae->mForwardto = m.apis[i].forwardto;
+        ae->mBp.func_addr = ae->mVa;
+    }
+}
+
+void ModuleInfoItem::ToIpcFilter(const ModuleInfoItem * mii, PipeDefine::msg::ApiFilter & filter)
+{
+    filter.module_name = mii->mName;
+    for (size_t i = 0; i < mii->mApis.size(); ++i)
+    {
+        PipeDefine::msg::ApiFilter::Api filter_api;
+        if (mii->mApis[i]->mIsHook)
+            filter_api.SetFilter();
+        if (mii->mApis[i]->mBp.break_always)
+            filter_api.SetBreakALways();
+        if (mii->mApis[i]->mBp.break_next_time)
+            filter_api.SetBreakNextTime();
+        if (mii->mApis[i]->mBp.break_call_from)
+            filter_api.SetBreakCallFrom();
+        if (mii->mApis[i]->mBp.break_invoke_time)
+            filter_api.SetBreakInvokeTime();
+        filter_api.call_from = mii->mApis[i]->mBp.call_from;
+        filter_api.func_addr = mii->mApis[i]->mBp.func_addr;
+        filter_api.invoke_time = mii->mApis[i]->mBp.invoke_time;
+        assert(mii->mApis[i]->mVa == mii->mApis[i]->mBp.func_addr);
+
+        filter.apis.push_back(filter_api);
+    }
 }

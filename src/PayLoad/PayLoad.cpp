@@ -27,20 +27,6 @@ __declspec(naked) intptr_t GetCurThreadId()
 }
 
 
-string GetDllNameFromExportDirectory(HMODULE hmod)
-{
-    const char* lpImage = (const char*)hmod;
-    PIMAGE_DOS_HEADER imDH = (PIMAGE_DOS_HEADER)lpImage;
-    PIMAGE_NT_HEADERS imNH = (PIMAGE_NT_HEADERS)((char*)lpImage + imDH->e_lfanew);
-    DWORD exportRVA = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
-    PIMAGE_EXPORT_DIRECTORY imED = (PIMAGE_EXPORT_DIRECTORY)(lpImage + exportRVA);
-    long pExportSize = imNH->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
-    if (pExportSize == 0 || !IsMemoryReadable(imED) || imED->Characteristics != 0 || imED->MajorVersion != 0 || imED->MinorVersion != 0)
-        return "";
-    else
-        return lpImage + imED->Name;
-}
-
 class HookManager
 {
     std::set<LPVOID, std::less<LPVOID>, Allocator::allocator<LPVOID>> mHookedModule;
@@ -889,6 +875,8 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
 {
     PARAM *param = (PARAM*)(LPVOID)PARAM::PARAM_ADDR;
 
+    const bool isNtdll = _path == "ntdll.dll";
+
     if (!param->bNtdllInited)
         return false;
     if (!hmod)
@@ -942,7 +930,8 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
     CollectModuleInfo(hmod, moduleName, path, msgModuleApis);
     msgModuleApis.no_reply = !checkPipeReply;
     auto content = msgModuleApis.Serial();
-    PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
+    if (!isNtdll)
+        PipeLine::msPipe->Send(PipeDefine::Pipe_C_Req_ModuleApiList, content);
 
     PipeDefine::msg::ApiFilter filter;
     if (checkPipeReply)
@@ -956,13 +945,24 @@ bool DoModuleHook(HMODULE hmod, const string& _path, bool checkPipeReply)
     else
     {
         // ntdll 自行构造
-        filter.module_name = msgModuleApis.module_name;
-        for (size_t i = 0; i < msgModuleApis.apis.size(); ++i)
+        if (isNtdll)
         {
-            PipeDefine::msg::ApiFilter::Api a;
-            a.SetFilter();
-            a.func_addr = msgModuleApis.apis[i].va;
-            filter.apis.push_back(a);
+            if (param->ntdllFilterSerialDataSize > 0 && param->ntdllFilterSerialDataSize < sizeof(param->ntdllFilterSerialData))
+            {
+                std::vector<char, Allocator::allocator<char>> v(param->ntdllFilterSerialData, param->ntdllFilterSerialData + param->ntdllFilterSerialDataSize);
+                filter.Unserial(v);
+            }
+        }
+        else
+        {
+            filter.module_name = msgModuleApis.module_name;
+            for (size_t i = 0; i < msgModuleApis.apis.size(); ++i)
+            {
+                PipeDefine::msg::ApiFilter::Api a;
+                a.SetFilter();
+                a.func_addr = msgModuleApis.apis[i].va;
+                filter.apis.push_back(a);
+            }
         }
     }
 

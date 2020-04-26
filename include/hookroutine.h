@@ -81,6 +81,8 @@ private:
 #endif
 
 
-bool IsMemoryReadable(LPVOID addr);
-void CheckDataExportOrForwardApi(bool& dataExp, bool& forwardApi, DWORD rvafunc, PIMAGE_DATA_DIRECTORY exportDir, PIMAGE_NT_HEADERS imNH, const char* lpImage);
-void CollectModuleInfo(HMODULE hmod, const Allocator::string& modname, const Allocator::string& modpath, PipeDefine::msg::ModuleApis& msgModuleApis);
+bool                IsMemoryReadable(LPVOID addr);
+Allocator::string   GetDllNameFromExportDirectory(HMODULE hmod);
+void                CheckDataExportOrForwardApi(bool& dataExp, bool& forwardApi, DWORD rvafunc, PIMAGE_DATA_DIRECTORY exportDir, PIMAGE_NT_HEADERS imNH, const char* lpImage);
+void                CollectModuleInfo(HMODULE hmod, const Allocator::string& modname, const Allocator::string& modpath, PipeDefine::msg::ModuleApis& msgModuleApis);
+PVOID               BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath);

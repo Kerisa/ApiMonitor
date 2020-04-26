@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 #include "pipemessage.h"
@@ -47,6 +48,11 @@ struct ModuleInfoItem
     std::string                 mPath;
     intptr_t                    mBase{ 0 };
     std::vector<ApiInfoItem*>   mApis;
+
+    ~ModuleInfoItem();
+
+    static void FromIpcMessage(ModuleInfoItem* mii, const PipeDefine::msg::ModuleApis& m);
+    static void ToIpcFilter(const ModuleInfoItem* mii, PipeDefine::msg::ApiFilter& filter);
 };
 
 struct ApiLogItem
@@ -80,6 +86,7 @@ public:
     bool SuspendProcess();
     bool ResumeProcess();
 
+    std::function<void(ModuleInfoItem* mii)> f_SetupNtdllFilter;
     bool mContinueOEP{ false };
     bool mStopMonitor{ false };
     PipeController* mControllerRef{ nullptr };

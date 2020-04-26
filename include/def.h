@@ -287,5 +287,6 @@ struct PARAM
 
 
     CONTEXT ctx;
+    long ntdllFilterSerialDataSize{ 0 };
     char ntdllFilterSerialData[90000];
 };

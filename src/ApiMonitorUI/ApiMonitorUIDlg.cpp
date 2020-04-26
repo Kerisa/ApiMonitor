@@ -23,6 +23,8 @@
 #define WM_TREE_ADD_MODULE WM_USER+100
 #define WM_BREAK_POINT_HIT WM_USER+101
 
+#define ADD_MODULE_API_TREE_DIRECTLY 1
+
 const int TreeCtrlColumnIndex_Module     = 0;
 const int TreeCtrlColumnIndex_VA         = 1;
 const int TreeCtrlColumnIndex_HookCount  = 2;
@@ -208,6 +210,11 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
 
     m_Monitor = new Monitor();
     m_Monitor->SetPipeHandler(m_Controller);
+    m_Monitor->f_SetupNtdllFilter = [this](ModuleInfoItem* mii) {
+        CAddModuleFilterDlg dlg(mii);
+        dlg.DoModal();
+        this->SendMessage(WM_TREE_ADD_MODULE, (WPARAM)mii, ADD_MODULE_API_TREE_DIRECTLY);
+    };
 
     m_editFilePath.SetWindowText(L"C:\\Projects\\ApiMonitor\\bin\\Win32\\Release\\TestExe.exe");
 
@@ -311,49 +318,14 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             std::vector<char, Allocator::allocator<char>> str(msg->Content, msg->Content + msg->ContentSize);
             m.Unserial(str);
             ModuleInfoItem* me = new ModuleInfoItem();
-            me->mName = m.module_name;
-            me->mPath = m.module_path;
-            me->mBase = m.module_base;
-            for (size_t i = 0; i < m.apis.size(); ++i)
-            {
-                me->mApis.push_back(new ApiInfoItem(me));
-                ApiInfoItem* ae = me->mApis.back();
-                ae->mName = m.apis[i].name;
-                ae->mVa = m.apis[i].va;
-                ae->mIsForward = m.apis[i].forward_api;
-                ae->mIsDataExport = m.apis[i].data_export;
-                ae->mForwardto = m.apis[i].forwardto;
-                ae->mBp.func_addr = ae->mVa;
-                //if (!_stricmp(m.module_name.c_str(), "kernel32.dll") && m.apis[i].name == "OutputDebugStringA")
-                //    pc->outputdbgstr = m.apis[i].va;
-            }
+            ModuleInfoItem::FromIpcMessage(me, m);
             dlg->UpdateModuleList(me);
 
             if (!m.no_reply)
             {
+                // 由 UI 更新 ModuleInfoItem
                 PipeDefine::msg::ApiFilter filter;
-                filter.module_name = m.module_name;
-                for (size_t i = 0; i < me->mApis.size(); ++i)
-                {
-                    // 由 UI 更新
-                    PipeDefine::msg::ApiFilter::Api filter_api;
-                    if (me->mApis[i]->mIsHook)
-                        filter_api.SetFilter();
-                    if (me->mApis[i]->mBp.break_always)
-                        filter_api.SetBreakALways();
-                    if (me->mApis[i]->mBp.break_next_time)
-                        filter_api.SetBreakNextTime();
-                    if (me->mApis[i]->mBp.break_call_from)
-                        filter_api.SetBreakCallFrom();
-                    if (me->mApis[i]->mBp.break_invoke_time)
-                        filter_api.SetBreakInvokeTime();
-                    filter_api.call_from        = me->mApis[i]->mBp.call_from;
-                    filter_api.func_addr        = me->mApis[i]->mBp.func_addr;
-                    filter_api.invoke_time      = me->mApis[i]->mBp.invoke_time;
-                    ASSERT(me->mApis[i]->mVa == me->mApis[i]->mBp.func_addr);
-
-                    filter.apis.push_back(filter_api);
-                }
+                ModuleInfoItem::ToIpcFilter(me, filter);
                 str = filter.Serial();
                 PipeDefine::Message* msg2 = (PipeDefine::Message*)writeData;
                 msg2->type = PipeDefine::Pipe_S_Ack_FilterApi;
@@ -436,6 +408,7 @@ void CApiMonitorUIDlg::OnBnClickedButton1()
 LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
 {
     ModuleInfoItem* mii = (ModuleInfoItem*)wParam;
+    const bool skipUISelect = (lParam == ADD_MODULE_API_TREE_DIRECTLY);
 
     // 配置中的 api 数量与实际数量相同时应用配置里的设置
     if (DllFilterConfig::GetConfig()->CheckDllApiMatch(mii))
@@ -447,7 +420,7 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
             mii->mApis[i]->mIsHook = (s == DllFilterConfig::kHook);
         }
     }
-    else
+    else if (!skipUISelect)
     {
         CAddModuleFilterDlg dlg(mii, this);
         dlg.DoModal();
