@@ -24,9 +24,15 @@
     <ClCompile Include="..\..\include\allocator.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\include\hookroutine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\pipemessage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\hookroutine.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

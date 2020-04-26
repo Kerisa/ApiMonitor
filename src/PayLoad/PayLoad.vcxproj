@@ -196,10 +196,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\include\allocator.cpp" />
+    <ClCompile Include="..\..\include\hookroutine.cpp" />
     <ClCompile Include="..\..\include\pipemessage.cpp" />
     <ClCompile Include="PayLoad.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\include\hookroutine.h" />
     <ClInclude Include="..\..\include\pipemessage.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
