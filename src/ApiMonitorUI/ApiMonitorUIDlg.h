@@ -84,4 +84,6 @@ public:
     afx_msg void OnUpdateSetbreakpointDelete(CCmdUI *pCmdUI);
     afx_msg void OnBnClickedButtonSuspend();
     afx_msg void OnBnClickedButtonResume();
+    afx_msg void OnConfigSavetreetofile();
+    afx_msg void OnOptionsReload();
 };

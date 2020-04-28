@@ -70,11 +70,11 @@ int Monitor::LoadFile(const std::wstring& filePath)
     assert(f_SetupNtdllFilter);
     PipeDefine::msg::ModuleApis msgModuleApis;
     CollectModuleInfo((HMODULE)param.ntdllBase, "ntdll.dll", GetDllNameFromExportDirectory((HMODULE)param.ntdllBase), msgModuleApis);
-    ModuleInfoItem mii;
-    ModuleInfoItem::FromIpcMessage(&mii, msgModuleApis);
-    f_SetupNtdllFilter(&mii);
+    ModuleInfoItem* mii = new ModuleInfoItem();
+    ModuleInfoItem::FromIpcMessage(mii, msgModuleApis);
+    f_SetupNtdllFilter(mii);
     PipeDefine::msg::ApiFilter filter;
-    ModuleInfoItem::ToIpcFilter(&mii, filter);
+    ModuleInfoItem::ToIpcFilter(mii, filter);
     std::vector<char> v = filter.Serial();
     assert(v.size() < sizeof(param.ntdllFilterSerialData));
     memcpy_s(param.ntdllFilterSerialData, sizeof(param.ntdllFilterSerialData), v.data(), v.size());

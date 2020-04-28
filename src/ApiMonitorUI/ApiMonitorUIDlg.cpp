@@ -148,6 +148,8 @@ BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
     ON_UPDATE_COMMAND_UI(ID_SETBREAKPOINT_DELETE, &CApiMonitorUIDlg::OnUpdateSetbreakpointDelete)
     ON_BN_CLICKED(IDC_BUTTON_SUSPEND, &CApiMonitorUIDlg::OnBnClickedButtonSuspend)
     ON_BN_CLICKED(IDC_BUTTON_RESUME, &CApiMonitorUIDlg::OnBnClickedButtonResume)
+    ON_COMMAND(ID_CONFIG_SAVETREETOFILE, &CApiMonitorUIDlg::OnConfigSavetreetofile)
+    ON_COMMAND(ID_OPTIONS_RELOAD, &CApiMonitorUIDlg::OnOptionsReload)
 END_MESSAGE_MAP()
 
 
@@ -211,8 +213,6 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
     m_Monitor = new Monitor();
     m_Monitor->SetPipeHandler(m_Controller);
     m_Monitor->f_SetupNtdllFilter = [this](ModuleInfoItem* mii) {
-        CAddModuleFilterDlg dlg(mii);
-        dlg.DoModal();
         this->SendMessage(WM_TREE_ADD_MODULE, (WPARAM)mii, ADD_MODULE_API_TREE_DIRECTLY);
     };
 
@@ -560,22 +560,22 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
         return;
 
     DWORD R;
-    std::vector<ModuleInfoItem> tmpModule;
+    std::vector<ModuleInfoItem*> tmpModule;
     std::transform(m_Modules.begin(), m_Modules.end(), std::back_inserter(tmpModule), [](ModuleInfoItem* mii) {
-        return *mii;
+        return mii;
     });
     for (size_t i = 0; i < tmpModule.size(); ++i)
     {
         sstream_t ss;
-        ss << "Module\n-------------------------------\nName: " << tmpModule[i].mName << ", Path: " << tmpModule[i].mPath << ", Base: "
-           << std::hex << tmpModule[i].mBase << "\n";
-        for (size_t k = 0; k < tmpModule[i].mApis.size(); ++k)
+        ss << "Module\n-------------------------------\nName: " << tmpModule[i]->mName << ", Path: " << tmpModule[i]->mPath << ", Base: "
+           << std::hex << tmpModule[i]->mBase << "\n";
+        for (size_t k = 0; k < tmpModule[i]->mApis.size(); ++k)
         {
-            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " [" << (tmpModule[i].mApis[k]->mIsHook ? "+" : "-") << "] " << tmpModule[i].mApis[k]->mName;
-            if (tmpModule[i].mApis[k]->mIsForward)
-                ss << "--> " << tmpModule[i].mApis[k]->mForwardto;
+            ss << "No." << std::setw(5) << std::setfill('0') << (k + 1) << " [" << (tmpModule[i]->mApis[k]->mIsHook ? "+" : "-") << "] " << tmpModule[i]->mApis[k]->mName;
+            if (tmpModule[i]->mApis[k]->mIsForward)
+                ss << "--> " << tmpModule[i]->mApis[k]->mForwardto;
             else
-                ss << ", VA: " << tmpModule[i].mApis[k]->mVa << ", DataExport: " << (tmpModule[i].mApis[k]->mIsDataExport ? "Yes" : "No");
+                ss << ", VA: " << tmpModule[i]->mApis[k]->mVa << ", DataExport: " << (tmpModule[i]->mApis[k]->mIsDataExport ? "Yes" : "No");
             ss << "\n";
         }
         ss << "\n";
@@ -672,7 +672,7 @@ void CApiMonitorUIDlg::ResetState()
 {
     m_ApiLogs.clear();
     for (auto p : m_Modules)
-        delete p;
+        ModuleInfoItem::Free(p);
     m_Modules.clear();
     m_BreakPointsRef.clear();
     m_treeModuleList.GetTreeCtrl().DeleteAllItems();
@@ -809,4 +809,25 @@ void CApiMonitorUIDlg::OnBnClickedButtonResume()
         GetDlgItem(IDC_BUTTON_SUSPEND)->ShowWindow(SW_NORMAL);
         GetDlgItem(IDC_BUTTON_RESUME)->ShowWindow(SW_HIDE);
     }
+}
+
+
+void CApiMonitorUIDlg::OnConfigSavetreetofile()
+{
+    for (size_t m = 0; m < m_Modules.size(); ++m)
+    {
+        for (size_t i = 0; i < m_Modules[m]->mApis.size(); ++i)
+        {
+            DllFilterConfig::GetConfig()->UpdateApi(m_Modules[m]->mPath, m_Modules[m]->mApis[i]->mName,
+                m_Modules[m]->mApis[i]->mIsHook ? DllFilterConfig::kHook : DllFilterConfig::kIgnore);
+        }
+    }
+    DllFilterConfig::GetConfig()->SaveToFile();
+    AfxMessageBox(_T("Save Succees."), MB_ICONINFORMATION);
+}
+
+
+void CApiMonitorUIDlg::OnOptionsReload()
+{
+    AfxMessageBox(_T("Not Ready"));
 }

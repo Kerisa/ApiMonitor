@@ -25,7 +25,6 @@
 #define IDC_EDIT_NAME                   1015
 #define IDC_BUTTON_SUSPEND              1015
 #define IDC_EDIT_PATH                   1016
-#define IDC_BUTTON_SUSPEND2             1016
 #define IDC_BUTTON_RESUME               1016
 #define IDC_EDIT_BASE                   1017
 #define IDC_EDIT2                       1017
@@ -50,13 +49,14 @@
 #define ID_SETBREAKPOINT_NEXTTIME32782  32782
 #define IDM_SETBREAKPOINT_NEXTTIME      32783
 #define IDM_FILTERDLG_SETBREAKPOINT_NEXTTIME 32784
+#define ID_CONFIG_SAVETREETOFILE        32785
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        140
-#define _APS_NEXT_COMMAND_VALUE         32785
+#define _APS_NEXT_COMMAND_VALUE         32786
 #define _APS_NEXT_CONTROL_VALUE         1021
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

@@ -49,10 +49,12 @@ struct ModuleInfoItem
     intptr_t                    mBase{ 0 };
     std::vector<ApiInfoItem*>   mApis;
 
-    ~ModuleInfoItem();
-
     static void FromIpcMessage(ModuleInfoItem* mii, const PipeDefine::msg::ModuleApis& m);
     static void ToIpcFilter(const ModuleInfoItem* mii, PipeDefine::msg::ApiFilter& filter);
+    static void Free(ModuleInfoItem* p) { delete p; }
+
+private:
+    ~ModuleInfoItem();
 };
 
 struct ApiLogItem
