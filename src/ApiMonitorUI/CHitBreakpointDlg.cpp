@@ -38,25 +38,23 @@ BOOL CHitBreakpointDlg::OnInitDialog()
     m_ModuleName   = ToCString(m_bc->mBelongApi->mBelongModule->mName);
     m_FunctionName = ToCString(m_bc->mBelongApi->mName);
     m_VA           = ToCString(m_bc->func_addr, true);
-    if (m_bc->break_always)
+    switch (m_bc->flags)
     {
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS:
         m_Cond = _T("Always Break");
-    }
-    else if (m_bc->break_next_time)
-    {
+        break;
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME:
         m_Cond = _T("One-Time Break");
-    }
-    else if (m_bc->break_call_from)
-    {
+        break;
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM:
         m_Cond = CString(_T("Call From = ")) + ToCString(m_bc->call_from, true);
-    }
-    else if (m_bc->break_invoke_time)
-    {
+        break;
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME:
         m_Cond = CString(_T("Hit Time = ")) + ToCString(m_bc->invoke_time);
-    }
-    else
-    {
+        break;
+    default:
         m_Cond = _T("???");
+        break;
     }
     UpdateData(FALSE);
     return TRUE;

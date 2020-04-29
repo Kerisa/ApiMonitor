@@ -401,7 +401,7 @@ void CApiMonitorUIDlg::OnBnClickedButton1()
     }
     ResetState();
     m_RunningMonitorThread = std::thread([this, path]() {
-        return m_Monitor->LoadFile(path.GetString());
+        return m_Monitor->LoadFile(path.GetString(), L"");      // 命令行参数
     });
 }
 
@@ -416,6 +416,8 @@ LRESULT CApiMonitorUIDlg::OnTreeListAddModule(WPARAM wParam, LPARAM lParam)
         for (size_t i = 0; i < mii->mApis.size(); ++i)
         {
             auto s = DllFilterConfig::GetConfig()->GetApiHookStatus(mii->mPath, mii->mApis[i]->mName);
+            if (DllFilterConfig::GetConfig()->GetApiBpInfo(mii->mPath, mii->mApis[i]->mName, mii->mApis[i]->mBp))
+                mii->mApis[i]->mBp.func_addr = mii->mApis[i]->mVa;
             ASSERT(s == DllFilterConfig::kHook || s == DllFilterConfig::kIgnore);
             mii->mApis[i]->mIsHook = (s == DllFilterConfig::kHook);
         }
@@ -702,7 +704,7 @@ void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
         return;
 
     bc->invoke_time = times;
-    bc->break_invoke_time = true;
+    bc->flags |= PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME;
     m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, CString(_T("times == ")) + dlg.m_Times);
@@ -721,7 +723,7 @@ void CApiMonitorUIDlg::OnSetbreakpointAlways()
     if (!bc)
         return;
 
-    bc->break_always = true;
+    bc->flags |= PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS;
     m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Always"));
@@ -759,7 +761,7 @@ void CApiMonitorUIDlg::OnSetbreakpointNexttime()
     if (!bc)
         return;
 
-    bc->break_next_time = true;
+    bc->flags |= PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME;
     m_BreakPointsRef.insert(bc);
 
     m_treeModuleList.SetItemText(hItem, TreeCtrlColumnIndex_BreakPoint, _T("Next Time"));
@@ -818,8 +820,7 @@ void CApiMonitorUIDlg::OnConfigSavetreetofile()
     {
         for (size_t i = 0; i < m_Modules[m]->mApis.size(); ++i)
         {
-            DllFilterConfig::GetConfig()->UpdateApi(m_Modules[m]->mPath, m_Modules[m]->mApis[i]->mName,
-                m_Modules[m]->mApis[i]->mIsHook ? DllFilterConfig::kHook : DllFilterConfig::kIgnore);
+            DllFilterConfig::GetConfig()->UpdateApi(m_Modules[m]->mApis[i]);
         }
     }
     DllFilterConfig::GetConfig()->SaveToFile();

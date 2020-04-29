@@ -1,5 +1,6 @@
 
 #include "stdafx.h"
+#include <algorithm>
 #include <fstream>
 #include <string>
 #include "json/json.h"
@@ -61,6 +62,11 @@ bool DllFilterConfig::LoadFromFile()
             string apiName = jApi[k]["Name"].asCString();
             ApiDetail ad;
             ad.mHook = jApi[k]["Hook"].asBool();
+            if (!jApi[k]["BpF"].isNull())
+            {
+                ad.mBpFlag  = jApi[k]["BpF"].asInt();
+                ad.mBpExtra = jApi[k]["BpE"].asInt64();
+            }
             auto result = md.mApis.insert(make_pair(apiName, ad));
             if (!result.second)
                 throw "duplicate api name";
@@ -86,6 +92,11 @@ void DllFilterConfig::SaveToFile()
             Json::Value detail;
             detail["Name"] = itt->first;
             detail["Hook"] = itt->second.mHook;
+            if (itt->second.mBpFlag != 0)
+            {
+                detail["BpF"] = itt->second.mBpFlag;
+                detail["BpE"] = itt->second.mBpExtra;
+            }
             apis.append(detail);
         }
         module["Api"] = apis;
@@ -97,6 +108,23 @@ void DllFilterConfig::SaveToFile()
     ofstream f(ToStdString(GetConfigPath()), ios::binary);
     f.write(s.c_str(), s.size());
     f.close();
+}
+
+void DllFilterConfig::UpdateApi(ApiInfoItem * aii)
+{
+    std::string path;
+    std::transform(aii->mBelongModule->mPath.begin(), aii->mBelongModule->mPath.end(), std::back_inserter(path), tolower);
+
+    ModuleDetail& mDetail = mModules[path];
+    ApiDetail&    aDetail = mDetail.mApis[aii->mName];
+
+    aDetail.mBpFlag = (aii->mBp.flags & ~PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME);
+    if (aii->mBp.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM)
+        aDetail.mBpExtra = aii->mBp.call_from;
+    else if (aii->mBp.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME)
+        aDetail.mBpExtra = aii->mBp.invoke_time;
+
+    aDetail.mHook = aii->mIsHook;
 }
 
 void DllFilterConfig::UpdateApi(const CString & _dllPath, const CString & _apiName, Status s)
@@ -133,6 +161,30 @@ DllFilterConfig::Status DllFilterConfig::GetApiHookStatus(const std::string& dll
     if (itt == it->second.mApis.end())
         return kNotDefine;
     return itt->second.mHook ? kHook : kIgnore;
+}
+
+bool DllFilterConfig::GetApiBpInfo(const std::string & dllPath, const std::string & apiName, PipeDefine::msg::SetBreakCondition & sbc)
+{
+    auto p = dllPath;
+    for (auto& c : p)
+        c = tolower(c);
+
+    auto it = mModules.find(p);
+    if (it == mModules.end())
+        return false;
+    auto itt = it->second.mApis.find(apiName);
+    if (itt == it->second.mApis.end())
+        return false;
+
+    if (itt->second.mBpFlag == 0)
+        return false;
+
+    sbc.flags = itt->second.mBpFlag;
+    if (itt->second.mBpFlag & PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM)
+        sbc.call_from = itt->second.mBpExtra;
+    else if (itt->second.mBpFlag & PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME)
+        sbc.invoke_time = itt->second.mBpExtra;
+    return true;
 }
 
 size_t DllFilterConfig::GetModuleApiCountInConfig(const std::string & dllPath) const

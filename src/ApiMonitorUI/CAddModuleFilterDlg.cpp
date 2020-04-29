@@ -140,8 +140,7 @@ void CAddModuleFilterDlg::OnOK()
         mModuleInfoItem->mApis[i]->mIsHook = checked;
         if (save)
         {
-            DllFilterConfig::GetConfig()->UpdateApi(mModuleInfoItem->mPath, mModuleInfoItem->mApis[i]->mName,
-                checked ? DllFilterConfig::kHook : DllFilterConfig::kIgnore);
+            DllFilterConfig::GetConfig()->UpdateApi(mModuleInfoItem->mApis[i]);
         }
     }
     if (save)

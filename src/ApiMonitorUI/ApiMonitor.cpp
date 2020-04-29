@@ -39,14 +39,27 @@ bool Monitor::ResumeProcess()
     return ret >= 0;
 }
 
-int Monitor::LoadFile(const std::wstring& filePath)
+int Monitor::LoadFile(const std::wstring& filePath, const std::wstring runParameters)
 {
+    if (filePath.empty())
+        return -1;
+
+    std::wstring pathWithQuota = filePath;
+    if (!filePath.empty() && filePath.front() != L'\"' && filePath.back() != L'\"' && filePath.find(L" ") != std::wstring::npos)
+        pathWithQuota = L"\"" + filePath + L"\"";
+
     WCHAR cmd[MAX_PATH] = { 0 };
-    wcscpy_s(cmd, filePath.c_str());
+    wcscpy_s(cmd, pathWithQuota.c_str());
+
     STARTUPINFO si = { 0 };
     si.cb = sizeof(si);
     memset(&mProcessInfo, 0, sizeof(mProcessInfo));
     BOOL success = CreateProcess(filePath.c_str(), cmd, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &mProcessInfo);
+    if (!success)
+    {
+        assert(0);
+        return -1;
+    }
 
     LPVOID paramBase = VirtualAllocEx(mProcessInfo.hProcess, (LPVOID)PARAM::PARAM_ADDR, sizeof(PARAM), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     assert(paramBase);
@@ -122,51 +135,56 @@ int Monitor::LoadFile(const std::wstring& filePath)
 
 bool ApiInfoItem::IsBpSet() const
 {
-    return mBp.break_always || mBp.break_call_from || mBp.break_invoke_time || mBp.break_next_time;
+    return mBp.flags != 0;
 }
 
 void ApiInfoItem::BreakAlways()
 {
     RemoveBp();
-    mBp.break_always = true;
+    mBp.flags = PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS;
 }
 
 void ApiInfoItem::BreakNextTime()
 {
     RemoveBp();
-    mBp.break_next_time = true;
+    mBp.flags = PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME;
 }
 
 void ApiInfoItem::BreakOnTime(int time)
 {
     RemoveBp();
-    mBp.break_invoke_time = true;
+    mBp.flags = PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME;
     mBp.invoke_time = time;
 }
 
 void ApiInfoItem::RemoveBp()
 {
-    mBp.break_call_from = false;
-    mBp.break_invoke_time = false;
-    mBp.break_next_time = false;
-    mBp.break_always = false;
+    mBp.flags = 0;
 }
 
 std::string ApiInfoItem::GetBpDescription() const
 {
-    assert(mBp.break_next_time + mBp.break_call_from + mBp.break_invoke_time <= 1);
-    if (mBp.break_always)
-        return "Always";
-    else if (mBp.break_next_time)
-        return "Next Time";
-    else if (mBp.break_invoke_time)
+    assert(mBp.flags == 0 ||
+        mBp.flags == PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME ||
+        mBp.flags == PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME ||
+        mBp.flags == PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS);
+    switch (mBp.flags)
     {
+    case 0:
+        return "";
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS:
+        return "Always";
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME:
+        return "Next Time";
+    case PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME: {
         std::stringstream ss;
         ss << mBp.invoke_time;
         return std::string("times == ") + ss.str();
     }
-    else
+    default:
+        assert(0);
         return "";
+    }
 }
 
 ModuleInfoItem::~ModuleInfoItem()
@@ -199,16 +217,9 @@ void ModuleInfoItem::ToIpcFilter(const ModuleInfoItem * mii, PipeDefine::msg::Ap
     for (size_t i = 0; i < mii->mApis.size(); ++i)
     {
         PipeDefine::msg::ApiFilter::Api filter_api;
+        filter_api.flags = mii->mApis[i]->mBp.flags;
         if (mii->mApis[i]->mIsHook)
             filter_api.SetFilter();
-        if (mii->mApis[i]->mBp.break_always)
-            filter_api.SetBreakALways();
-        if (mii->mApis[i]->mBp.break_next_time)
-            filter_api.SetBreakNextTime();
-        if (mii->mApis[i]->mBp.break_call_from)
-            filter_api.SetBreakCallFrom();
-        if (mii->mApis[i]->mBp.break_invoke_time)
-            filter_api.SetBreakInvokeTime();
         filter_api.call_from = mii->mApis[i]->mBp.call_from;
         filter_api.func_addr = mii->mApis[i]->mBp.func_addr;
         filter_api.invoke_time = mii->mApis[i]->mBp.invoke_time;

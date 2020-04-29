@@ -82,7 +82,7 @@ public:
 class Monitor
 {
 public:
-    int LoadFile(const std::wstring& filePath);
+    int LoadFile(const std::wstring& filePath, const std::wstring runParameters);
 
     void SetPipeHandler(PipeController* controller);
     bool SuspendProcess();

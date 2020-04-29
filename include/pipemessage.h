@@ -332,11 +332,12 @@ namespace msg
 
     struct SetBreakCondition
     {
+        static constexpr long FLAG_BC_ALWAYS        = 2;
+        static constexpr long FLAG_BC_NEXT_TIME     = 4;
+        static constexpr long FLAG_BC_CALL_FROM     = 8;
+        static constexpr long FLAG_BC_INVOKE_TIME   = 16;
         long long func_addr{ 0 };
-        bool break_always{ false };
-        bool break_next_time{ false };
-        bool break_call_from{ false };
-        bool break_invoke_time{ false };
+        long flags{ 0 };
         long invoke_time{ 0 };
         long long call_from{ 0 };
 
@@ -345,10 +346,7 @@ namespace msg
             std::vector<char, Allocator::allocator<char>> vec;
             SerialInit(vec);
             SerialItem(vec, func_addr);
-            SerialItem(vec, break_always);
-            SerialItem(vec, break_next_time);
-            SerialItem(vec, break_call_from);
-            SerialItem(vec, break_invoke_time);
+            SerialItem(vec, flags);
             SerialItem(vec, invoke_time);
             SerialItem(vec, call_from);
             CalFinalLength(vec);
@@ -358,10 +356,7 @@ namespace msg
         {
             size_t idx = GetFirstItemIndex(str);
             idx = ExtractItem(str, idx, func_addr);
-            idx = ExtractItem(str, idx, break_always);
-            idx = ExtractItem(str, idx, break_next_time);
-            idx = ExtractItem(str, idx, break_call_from);
-            idx = ExtractItem(str, idx, break_invoke_time);
+            idx = ExtractItem(str, idx, flags);
             idx = ExtractItem(str, idx, invoke_time);
             idx = ExtractItem(str, idx, call_from);
         }

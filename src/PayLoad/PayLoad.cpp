@@ -595,21 +595,21 @@ void ProcessCmd(const PipeDefine::Message* msg)
             if (e->mOriginalVA == sbc.func_addr)
             {
                 Vlog("[ProcessCmd] found func va: " << e->mOriginalVA << "entry: " << e);
-                if (sbc.break_call_from)
+                if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM)
                 {
                     e->mParams.mBreakCallFromAddr = sbc.call_from;
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 }
-                if (sbc.break_invoke_time)
+                if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME)
                 {
                     e->mParams.mBreakReachInvokeTime = sbc.invoke_time;
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_REACH_INVOKE_TIME;
                 }
-                if (sbc.break_next_time)
+                if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_NEXT_TIME)
                 {
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_NEXT_TIME;
                 }
-                if (sbc.break_always)
+                if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_ALWAYS)
                 {
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_ALWAYS;
                 }
