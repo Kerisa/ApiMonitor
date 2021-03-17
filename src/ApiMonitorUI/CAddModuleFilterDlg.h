@@ -6,19 +6,19 @@ struct ModuleInfoItem;
 
 class CAddModuleFilterDlg : public CDialogEx
 {
-	DECLARE_DYNAMIC(CAddModuleFilterDlg)
+    DECLARE_DYNAMIC(CAddModuleFilterDlg)
 
 public:
-	CAddModuleFilterDlg(ModuleInfoItem* info, CWnd* pParent = nullptr);   // 标准构造函数
-	virtual ~CAddModuleFilterDlg();
+    CAddModuleFilterDlg(ModuleInfoItem* info, CWnd* pParent = nullptr);   // 标准构造函数
+    virtual ~CAddModuleFilterDlg();
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_ADD_MODULE_FILTER };
+    enum { IDD = IDD_ADD_MODULE_FILTER };
 #endif
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
+    virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
 
     virtual BOOL OnInitDialog();
     DECLARE_MESSAGE_MAP()

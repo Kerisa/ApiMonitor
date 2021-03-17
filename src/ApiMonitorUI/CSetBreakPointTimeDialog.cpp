@@ -12,7 +12,7 @@
 IMPLEMENT_DYNAMIC(CSetBreakPointTimeDialog, CDialogEx)
 
 CSetBreakPointTimeDialog::CSetBreakPointTimeDialog(CWnd* pParent /*=nullptr*/)
-	: CDialogEx(IDD_SET_BP_TIME, pParent)
+    : CDialogEx(IDD_SET_BP_TIME, pParent)
 {
 
 }
@@ -23,7 +23,7 @@ CSetBreakPointTimeDialog::~CSetBreakPointTimeDialog()
 
 void CSetBreakPointTimeDialog::DoDataExchange(CDataExchange* pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
     DDX_CBString(pDX, IDC_EDIT1, m_Times);
 }
 

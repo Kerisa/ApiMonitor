@@ -197,13 +197,13 @@ void ModuleInfoItem::FromIpcMessage(ModuleInfoItem* mii, const PipeDefine::msg::
 {
     mii->mName = m.module_name;
     mii->mPath = m.module_path;
-    mii->mBase = m.module_base;
+    mii->mBase = static_cast<intptr_t>(m.module_base);
     for (size_t i = 0; i < m.apis.size(); ++i)
     {
         mii->mApis.push_back(new ApiInfoItem(mii));
         ApiInfoItem* ae = mii->mApis.back();
         ae->mName = m.apis[i].name;
-        ae->mVa = m.apis[i].va;
+        ae->mVa = static_cast<intptr_t>(m.apis[i].va);
         ae->mIsForward = m.apis[i].forward_api;
         ae->mIsDataExport = m.apis[i].data_export;
         ae->mForwardto = m.apis[i].forwardto;

@@ -15,7 +15,7 @@
 IMPLEMENT_DYNAMIC(CAddModuleFilterDlg, CDialogEx)
 
 CAddModuleFilterDlg::CAddModuleFilterDlg(ModuleInfoItem* info, CWnd* pParent /*=nullptr*/)
-	: CDialogEx(IDD_ADD_MODULE_FILTER, pParent)
+    : CDialogEx(IDD_ADD_MODULE_FILTER, pParent)
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
     mModuleInfoItem = info;
@@ -27,7 +27,7 @@ CAddModuleFilterDlg::~CAddModuleFilterDlg()
 
 void CAddModuleFilterDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_LIST1, m_listModuleApis);
     DDX_Control(pDX, IDC_CHECK_ALL, m_checkAll);
     DDX_Control(pDX, IDC_EDIT_NAME, m_editName);
@@ -64,8 +64,8 @@ BOOL CAddModuleFilterDlg::OnInitDialog()
 
     // 设置此对话框的图标。  当应用程序主窗口不是对话框时，框架将自动
     //  执行此操作
-    SetIcon(m_hIcon, TRUE);			// 设置大图标
-    SetIcon(m_hIcon, FALSE);		// 设置小图标
+    SetIcon(m_hIcon, TRUE);            // 设置大图标
+    SetIcon(m_hIcon, FALSE);        // 设置小图标
 
     m_listModuleApis.SetExtendedStyle(LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_SIMPLESELECT);
     m_listModuleApis.InsertColumn(ListModuleApisColumn_No           , _T("No."),            LVCFMT_LEFT, 50, -1);
@@ -202,7 +202,7 @@ void CAddModuleFilterDlg::OnSetbreakpointAlways()
     if (index < 0)
         return;
 
-    if (index >= mModuleInfoItem->mApis.size())
+    if (static_cast<size_t>(index) >= mModuleInfoItem->mApis.size())
         return;
 
     TCHAR buffer[512];
@@ -229,7 +229,7 @@ void CAddModuleFilterDlg::OnSetbreakpointMeethittime()
     if (index < 0)
         return;
 
-    if (index >= mModuleInfoItem->mApis.size())
+    if (static_cast<size_t>(index) >= mModuleInfoItem->mApis.size())
         return;
 
     TCHAR buffer[512];
@@ -247,7 +247,7 @@ void CAddModuleFilterDlg::OnSetbreakpointDelete()
     if (index < 0)
         return;
 
-    if (index >= mModuleInfoItem->mApis.size())
+    if (static_cast<size_t>(index) >= mModuleInfoItem->mApis.size())
         return;
 
     TCHAR buffer[512];
@@ -265,7 +265,7 @@ void CAddModuleFilterDlg::OnSetbreakpointNexttime()
     if (index < 0)
         return;
 
-    if (index >= mModuleInfoItem->mApis.size())
+    if (static_cast<size_t>(index) >= mModuleInfoItem->mApis.size())
         return;
 
     TCHAR buffer[512];

@@ -248,7 +248,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     {
         char jmp[2];
         jmp[0] = '\xeb';
-        jmp[1] = position - (0x100 + 0x2);
+        jmp[1] = static_cast<char>(position - (0x100 + 0x2));
         WriteProcessMemory(hProcess, (LPVOID)pLdrLoadDll, jmp, sizeof(jmp), &R);
 
         auto hook = GetProcAddress(hDll2, "HookLdrLoadDllPad");

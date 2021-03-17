@@ -13,7 +13,7 @@
 IMPLEMENT_DYNAMIC(CHitBreakpointDlg, CDialogEx)
 
 CHitBreakpointDlg::CHitBreakpointDlg(SetBreakConditionUI* bc, CWnd* pParent /*=nullptr*/)
-	: CDialogEx(IDD_BREAKPOINT_HIT, pParent)
+    : CDialogEx(IDD_BREAKPOINT_HIT, pParent)
 {
     m_bc = bc;
 }
@@ -24,7 +24,7 @@ CHitBreakpointDlg::~CHitBreakpointDlg()
 
 void CHitBreakpointDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
     DDX_Text(pDX, IDC_MODULE, m_ModuleName);
     DDX_Text(pDX, IDC_FUNCNAME, m_FunctionName);
     DDX_Text(pDX, IDC_VA, m_VA);

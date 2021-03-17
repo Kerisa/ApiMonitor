@@ -113,7 +113,7 @@ PVOID BuildRemoteData(HANDLE hProcess, const TCHAR* dllPath)
     {
         char jmp[2];
         jmp[0] = '\xeb';
-        jmp[1] = position - (0x100 + 0x2);
+        jmp[1] = static_cast<char>(position - (0x100 + 0x2));
         WriteProcessMemory(hProcess, (LPVOID)pLdrLoadDll, jmp, sizeof(jmp), &R);
 
         auto hook = GetProcAddress(hDll2, "HookLdrLoadDllPad");
@@ -186,7 +186,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     }
 
     PipeDefine::Message* msg = (PipeDefine::Message*)readData;
-    while ((const uint8_t *)msg - readData < readDataSize)
+    while (static_cast<uint32_t>((const uint8_t *)msg - readData) < readDataSize)
     {
         switch (msg->type)
         {

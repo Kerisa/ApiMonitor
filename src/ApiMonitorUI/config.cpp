@@ -37,7 +37,7 @@ bool DllFilterConfig::LoadFromFile()
     if (!f.is_open())
         return false;
     f.seekg(0, ios::end);
-    vector<char> data(f.tellg());
+    vector<char> data(static_cast<size_t>(f.tellg()));
     if (data.size() == 0)
         return false;
     f.seekg(0, ios::beg);
@@ -183,7 +183,7 @@ bool DllFilterConfig::GetApiBpInfo(const std::string & dllPath, const std::strin
     if (itt->second.mBpFlag & PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM)
         sbc.call_from = itt->second.mBpExtra;
     else if (itt->second.mBpFlag & PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME)
-        sbc.invoke_time = itt->second.mBpExtra;
+        sbc.invoke_time = static_cast<long>(itt->second.mBpExtra);
     return true;
 }
 

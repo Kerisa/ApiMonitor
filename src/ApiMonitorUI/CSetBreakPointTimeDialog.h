@@ -5,22 +5,22 @@
 
 class CSetBreakPointTimeDialog : public CDialogEx
 {
-	DECLARE_DYNAMIC(CSetBreakPointTimeDialog)
+    DECLARE_DYNAMIC(CSetBreakPointTimeDialog)
 
 public:
-	CSetBreakPointTimeDialog(CWnd* pParent = nullptr);   // 标准构造函数
-	virtual ~CSetBreakPointTimeDialog();
+    CSetBreakPointTimeDialog(CWnd* pParent = nullptr);   // 标准构造函数
+    virtual ~CSetBreakPointTimeDialog();
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_SET_BP_TIME };
+    enum { IDD = IDD_SET_BP_TIME };
 #endif
 
     CString m_Times;
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
+    virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
     virtual BOOL OnInitDialog();
 
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 };

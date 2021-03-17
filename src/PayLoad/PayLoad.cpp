@@ -1,4 +1,5 @@
 ﻿
+#include <algorithm>
 #include <array>
 #include <list>
 #include <map>
@@ -597,7 +598,7 @@ void ProcessCmd(const PipeDefine::Message* msg)
                 Vlog("[ProcessCmd] found func va: " << e->mOriginalVA << "entry: " << e);
                 if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_CALL_FROM)
                 {
-                    e->mParams.mBreakCallFromAddr = sbc.call_from;
+                    e->mParams.mBreakCallFromAddr = static_cast<LONG_PTR>(sbc.call_from);
                     e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
                 }
                 if (sbc.flags & PipeDefine::msg::SetBreakCondition::FLAG_BC_INVOKE_TIME)
@@ -641,7 +642,7 @@ ULONG_PTR AddHookRoutine(const string& modname, HMODULE hmod, PVOID oldEntry, PV
         if (filter->IsBreakCallFrom())
         {
             Vlog("[AddHookRoutine] break when call from " << filter->call_from);
-            e->mParams.mBreakCallFromAddr = filter->call_from;
+            e->mParams.mBreakCallFromAddr = static_cast<LONG_PTR>(filter->call_from);
             e->mParams.mFlag |= HookEntries::Entry::Param::FLAG_BREAK_WHEN_CALL_FROM;
         }
         if (filter->IsBreakInvokeTime())

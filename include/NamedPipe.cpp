@@ -13,7 +13,7 @@ using namespace std;
 
 namespace Detail
 {
-    typedef struct
+    typedef struct stPIPEINST
     {
         static constexpr int WRITE_BUFSIZE = 1024*1024;
         static constexpr int READ_BUFSIZE  = 8*1024*1024;

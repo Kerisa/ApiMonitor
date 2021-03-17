@@ -4,6 +4,7 @@
 
 #include "stdafx.h"
 #include <algorithm>
+#include <cassert>
 #include <iomanip>
 #include <sstream>
 #include "ApiMonitorUI.h"
@@ -50,19 +51,19 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
 class CAboutDlg : public CDialogEx
 {
 public:
-	CAboutDlg();
+    CAboutDlg();
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_ABOUTBOX };
+    enum { IDD = IDD_ABOUTBOX };
 #endif
 
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
+    protected:
+    virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
 
 // 实现
 protected:
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 };
 
 CAboutDlg::CAboutDlg() : CDialogEx(IDD_ABOUTBOX)
@@ -71,7 +72,7 @@ CAboutDlg::CAboutDlg() : CDialogEx(IDD_ABOUTBOX)
 
 void CAboutDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
 }
 
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
@@ -82,14 +83,14 @@ END_MESSAGE_MAP()
 
 
 CApiMonitorUIDlg::CApiMonitorUIDlg(CWnd* pParent /*=nullptr*/)
-	: CDialogEx(IDD_APIMONITORUI_DIALOG, pParent)
+    : CDialogEx(IDD_APIMONITORUI_DIALOG, pParent)
 {
-	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+    m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
 
 void CApiMonitorUIDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDE_FILE_PATH, m_editFilePath);
     DDX_Control(pDX, IDC_TREE_MODULES, m_treeModuleList);
     DDX_Control(pDX, IDC_LIST_API_LOGS, m_listApiCalls);
@@ -125,9 +126,9 @@ void CApiMonitorUIDlg::CheckBreakCondition(void * pv)
 }
 
 BEGIN_MESSAGE_MAP(CApiMonitorUIDlg, CDialogEx)
-	ON_WM_SYSCOMMAND()
-	ON_WM_PAINT()
-	ON_WM_QUERYDRAGICON()
+    ON_WM_SYSCOMMAND()
+    ON_WM_PAINT()
+    ON_WM_QUERYDRAGICON()
     ON_BN_CLICKED(IDC_BUTTON1, &CApiMonitorUIDlg::OnBnClickedButton1)
     ON_MESSAGE(WM_TREE_ADD_MODULE, &CApiMonitorUIDlg::OnTreeListAddModule)
     ON_MESSAGE(WM_BREAK_POINT_HIT, &CApiMonitorUIDlg::OnBreakPointHit)
@@ -157,32 +158,32 @@ END_MESSAGE_MAP()
 
 BOOL CApiMonitorUIDlg::OnInitDialog()
 {
-	CDialogEx::OnInitDialog();
+    CDialogEx::OnInitDialog();
 
-	// 将“关于...”菜单项添加到系统菜单中。
+    // 将“关于...”菜单项添加到系统菜单中。
 
-	// IDM_ABOUTBOX 必须在系统命令范围内。
-	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
-	ASSERT(IDM_ABOUTBOX < 0xF000);
+    // IDM_ABOUTBOX 必须在系统命令范围内。
+    ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
+    ASSERT(IDM_ABOUTBOX < 0xF000);
 
-	CMenu* pSysMenu = GetSystemMenu(FALSE);
-	if (pSysMenu != nullptr)
-	{
-		BOOL bNameValid;
-		CString strAboutMenu;
-		bNameValid = strAboutMenu.LoadString(IDS_ABOUTBOX);
-		ASSERT(bNameValid);
-		if (!strAboutMenu.IsEmpty())
-		{
-			pSysMenu->AppendMenu(MF_SEPARATOR);
-			pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
-		}
-	}
+    CMenu* pSysMenu = GetSystemMenu(FALSE);
+    if (pSysMenu != nullptr)
+    {
+        BOOL bNameValid;
+        CString strAboutMenu;
+        bNameValid = strAboutMenu.LoadString(IDS_ABOUTBOX);
+        ASSERT(bNameValid);
+        if (!strAboutMenu.IsEmpty())
+        {
+            pSysMenu->AppendMenu(MF_SEPARATOR);
+            pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
+        }
+    }
 
-	// 设置此对话框的图标。  当应用程序主窗口不是对话框时，框架将自动
-	//  执行此操作
-	SetIcon(m_hIcon, TRUE);			// 设置大图标
-	SetIcon(m_hIcon, FALSE);		// 设置小图标
+    // 设置此对话框的图标。  当应用程序主窗口不是对话框时，框架将自动
+    //  执行此操作
+    SetIcon(m_hIcon, TRUE);            // 设置大图标
+    SetIcon(m_hIcon, FALSE);        // 设置小图标
 
     m_treeModuleList.GetTreeCtrl().ModifyStyle(NULL, TVS_FULLROWSELECT | TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS | TVS_CHECKBOXES);
     m_treeModuleList.InsertColumn(TreeCtrlColumnIndex_Module,       _T("Module"),       LVCFMT_LEFT, 200, -1);
@@ -223,20 +224,20 @@ BOOL CApiMonitorUIDlg::OnInitDialog()
         AfxMessageBox(_T("config not exist or invalid"));
     }
 
-	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
+    return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
 void CApiMonitorUIDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
-	if ((nID & 0xFFF0) == IDM_ABOUTBOX)
-	{
-		CAboutDlg dlgAbout;
-		dlgAbout.DoModal();
-	}
-	else
-	{
-		CDialogEx::OnSysCommand(nID, lParam);
-	}
+    if ((nID & 0xFFF0) == IDM_ABOUTBOX)
+    {
+        CAboutDlg dlgAbout;
+        dlgAbout.DoModal();
+    }
+    else
+    {
+        CDialogEx::OnSysCommand(nID, lParam);
+    }
 }
 
 // 如果向对话框添加最小化按钮，则需要下面的代码
@@ -245,34 +246,34 @@ void CApiMonitorUIDlg::OnSysCommand(UINT nID, LPARAM lParam)
 
 void CApiMonitorUIDlg::OnPaint()
 {
-	if (IsIconic())
-	{
-		CPaintDC dc(this); // 用于绘制的设备上下文
+    if (IsIconic())
+    {
+        CPaintDC dc(this); // 用于绘制的设备上下文
 
-		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
+        SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
 
-		// 使图标在工作区矩形中居中
-		int cxIcon = GetSystemMetrics(SM_CXICON);
-		int cyIcon = GetSystemMetrics(SM_CYICON);
-		CRect rect;
-		GetClientRect(&rect);
-		int x = (rect.Width() - cxIcon + 1) / 2;
-		int y = (rect.Height() - cyIcon + 1) / 2;
+        // 使图标在工作区矩形中居中
+        int cxIcon = GetSystemMetrics(SM_CXICON);
+        int cyIcon = GetSystemMetrics(SM_CYICON);
+        CRect rect;
+        GetClientRect(&rect);
+        int x = (rect.Width() - cxIcon + 1) / 2;
+        int y = (rect.Height() - cyIcon + 1) / 2;
 
-		// 绘制图标
-		dc.DrawIcon(x, y, m_hIcon);
-	}
-	else
-	{
-		CDialogEx::OnPaint();
-	}
+        // 绘制图标
+        dc.DrawIcon(x, y, m_hIcon);
+    }
+    else
+    {
+        CDialogEx::OnPaint();
+    }
 }
 
 //当用户拖动最小化窗口时系统调用此函数取得光标
 //显示。
 HCURSOR CApiMonitorUIDlg::OnQueryDragIcon()
 {
-	return static_cast<HCURSOR>(m_hIcon);
+    return static_cast<HCURSOR>(m_hIcon);
 }
 
 
@@ -293,7 +294,7 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
     *writeDataSize = 0;
     uint8_t* originalWriteData = writeData;
     PipeDefine::Message* msg = (PipeDefine::Message*)readData;
-    while ((const uint8_t *)msg - readData < readDataSize)
+    while (static_cast<uint32_t>((const uint8_t *)msg - readData) < readDataSize)
     {
         bool isUnknown = false;
         ASSERT(((intptr_t)msg + PipeDefine::Message::HeaderLength + msg->ContentSize <= (intptr_t)readData + readDataSize) && "pipe read buffer overflow");
@@ -343,12 +344,12 @@ void Reply(const uint8_t *readData, uint32_t readDataSize, uint8_t *writeData, u
             ApiLogItem al;
             al.mModuleName = m.module_name;
             al.mApiName = m.api_name;
-            al.mCallFrom = m.call_from;
+            al.mCallFrom = static_cast<intptr_t>(m.call_from);
             al.mTimes = m.times;
             al.mTid = msg->tid;
-            al.mRawArgs[0] = m.raw_args[0];
-            al.mRawArgs[1] = m.raw_args[1];
-            al.mRawArgs[2] = m.raw_args[2];
+            al.mRawArgs[0] = static_cast<intptr_t>(m.raw_args[0]);
+            al.mRawArgs[1] = static_cast<intptr_t>(m.raw_args[1]);
+            al.mRawArgs[2] = static_cast<intptr_t>(m.raw_args[2]);
             dlg->AppendApiCallLog(&al);
             if (m.wait_reply)
             {
@@ -612,6 +613,7 @@ void CApiMonitorUIDlg::OnBnClickedButtonExport()
 
 void CApiMonitorUIDlg::OnClose()
 {
+    ExitWorkThread();
     CDialogEx::OnCancel();
 }
 
@@ -682,6 +684,38 @@ void CApiMonitorUIDlg::ResetState()
     assert(!m_RunningMonitorThread.joinable());
 }
 
+void CApiMonitorUIDlg::ExitWorkThread()
+{
+    if (m_RunningMonitorThread.joinable())
+    {
+        HANDLE hT = m_RunningMonitorThread.native_handle();
+        DWORD waitResult = WaitForSingleObject(hT, 500);
+        switch (waitResult)
+        {
+        case WAIT_TIMEOUT:
+            printf("Work thread: Still running");
+            m_Monitor->mStopMonitor = true;
+            waitResult = WaitForSingleObject(hT, 5000);
+            if (waitResult == WAIT_TIMEOUT)
+            {
+                printf("Work thread: Still running(2)");
+                m_RunningMonitorThread.detach();
+            }
+            else if (waitResult == WAIT_OBJECT_0)
+            {
+                m_RunningMonitorThread.join();
+            }
+            return;
+
+        default:
+            printf("Work thread: Unexcept state");
+        case WAIT_OBJECT_0:
+            m_RunningMonitorThread.join();
+            return;
+        }
+    }
+}
+
 void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
 {
     if (!IsModuleFunctionSelected())
@@ -699,7 +733,7 @@ void CApiMonitorUIDlg::OnSetbreakpointMeethittime()
     if (!hItem)
         return;
 
-    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    SetBreakConditionUI* bc = FindBreakConditionInfo(static_cast<intptr_t>(ToInt(m_treeModuleList.GetItemText(hItem, 1), true)));    // VA
     if (!bc)
         return;
 
@@ -719,7 +753,7 @@ void CApiMonitorUIDlg::OnSetbreakpointAlways()
     if (!hItem)
         return;
 
-    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    SetBreakConditionUI* bc = FindBreakConditionInfo(static_cast<intptr_t>(ToInt(m_treeModuleList.GetItemText(hItem, 1), true)));    // VA
     if (!bc)
         return;
 
@@ -738,7 +772,7 @@ void CApiMonitorUIDlg::OnSetBreakPointDelete()
     if (!hItem)
         return;
 
-    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    SetBreakConditionUI* bc = FindBreakConditionInfo(static_cast<intptr_t>(ToInt(m_treeModuleList.GetItemText(hItem, 1), true)));    // VA
     if (!bc)
         return;
 
@@ -757,7 +791,7 @@ void CApiMonitorUIDlg::OnSetbreakpointNexttime()
     if (!hItem)
         return;
 
-    SetBreakConditionUI* bc = FindBreakConditionInfo(ToInt(m_treeModuleList.GetItemText(hItem, 1), true));    // VA
+    SetBreakConditionUI* bc = FindBreakConditionInfo(static_cast<intptr_t>(ToInt(m_treeModuleList.GetItemText(hItem, 1), true)));    // VA
     if (!bc)
         return;
 

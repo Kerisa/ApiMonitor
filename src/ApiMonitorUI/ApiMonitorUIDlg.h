@@ -19,51 +19,52 @@ class CApiMonitorUIDlg : public CDialogEx
 {
 // 构造
 public:
-	CApiMonitorUIDlg(CWnd* pParent = nullptr);	// 标准构造函数
+    CApiMonitorUIDlg(CWnd* pParent = nullptr);  // 标准构造函数
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_APIMONITORUI_DIALOG };
+    enum { IDD = IDD_APIMONITORUI_DIALOG };
 #endif
 
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV 支持
+protected:
+    virtual void DoDataExchange(CDataExchange* pDX);  // DDX/DDV 支持
 
 public:
-    void                    UpdateModuleList(void* me);        // PipeController::ModuleEntry*
-    void                    AppendApiCallLog(void* ai);        // PipeController::ApiLog*
-    void                    CheckBreakCondition(void* ai);     // PipeController::ApiLog*
+    void                            UpdateModuleList(void* me);        // PipeController::ModuleEntry*
+    void                            AppendApiCallLog(void* ai);        // PipeController::ApiLog*
+    void                            CheckBreakCondition(void* ai);     // PipeController::ApiLog*
 
-    bool                    IsModuleFunctionSelected();
-    SetBreakConditionUI*    FindBreakConditionInfo(intptr_t funcVA);
-    void                    ResetState();
+    bool                            IsModuleFunctionSelected();
+    SetBreakConditionUI*            FindBreakConditionInfo(intptr_t funcVA);
+    void                            ResetState();
+    void                            ExitWorkThread();
 
-    Monitor*                         m_Monitor;
-    PipeController*                  m_Controller;
-    std::mutex                       m_LogLock;
-
-    std::vector<ApiLogItem>          m_ApiLogs;
-    std::vector<ModuleInfoItem*>     m_Modules;
-    std::set<SetBreakConditionUI*>   m_BreakPointsRef;     // SetBreakConditionUI 指向 ModuleInfoItem
-    std::thread                      m_RunningMonitorThread;
+    Monitor*                        m_Monitor;
+    PipeController*                 m_Controller;
+    std::mutex                      m_LogLock;
+                                    
+    std::vector<ApiLogItem>         m_ApiLogs;
+    std::vector<ModuleInfoItem*>    m_Modules;
+    std::set<SetBreakConditionUI*>  m_BreakPointsRef;     // SetBreakConditionUI 指向 ModuleInfoItem
+    std::thread                     m_RunningMonitorThread;
 
 // 实现
 protected:
-	HICON                       m_hIcon;
-    CEdit                       m_editFilePath;
-    CColumnTreeCtrl             m_treeModuleList;
-    CListCtrl                   m_listApiCalls;
+    HICON                           m_hIcon;
+    CEdit                           m_editFilePath;
+    CColumnTreeCtrl                 m_treeModuleList;
+    CListCtrl                       m_listApiCalls;
 
-	// 生成的消息映射函数
-	virtual BOOL OnInitDialog();
+    // 生成的消息映射函数
+    virtual BOOL OnInitDialog();
     virtual void OnOK() {}
     virtual void OnCancel() {}
 
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 public:
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnPaint();
-	afx_msg HCURSOR OnQueryDragIcon();
+    afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
+    afx_msg void OnPaint();
+    afx_msg HCURSOR OnQueryDragIcon();
     afx_msg void OnBnClickedButton1();
     afx_msg LRESULT OnTreeListAddModule(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnBreakPointHit(WPARAM wParam, LPARAM lParam);
